@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -20,9 +21,10 @@ import { User, UserDocument } from '@/modules/auth/schemas/user.schema';
 import { UserRole } from '@/modules/auth/schemas/user.schema';
 import { CreateStudentDto } from '@/modules/students/dto/create-student.dto';
 import { UpdateStudentDto } from '@/modules/students/dto/update-student.dto';
-import { 
+import {
   validateSocialServiceDocumentWithOpenAI,
   validatePassedSubjectsDocumentWithOpenAI,
+  validateEnrollmentProofDocumentWithOpenAI,
 } from '@/utils/openai-validator';
 
 @Injectable()
@@ -235,7 +237,10 @@ export class StudentsService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(
+    id: string,
+    user?: { id: string; role: string; careerId?: string },
+  ) {
     // Try to find by _id first (Student ID)
     let student = await this.studentModel
       .findById(id)
@@ -254,6 +259,33 @@ export class StudentsService {
 
     if (!student) {
       throw new NotFoundException('Estudiante no encontrado');
+    }
+
+    // Si es coordinador, verificar que el estudiante pertenezca a su carrera
+    if (user?.role === 'coordinador') {
+      if (!user.careerId) {
+        throw new ForbiddenException(
+          'El coordinador no tiene una carrera asignada',
+        );
+      }
+
+      const studentCareerId =
+        student.careerId instanceof Types.ObjectId
+          ? student.careerId.toString()
+          : typeof student.careerId === 'object' &&
+              student.careerId !== null &&
+              '_id' in student.careerId
+            ? (student.careerId as { _id: Types.ObjectId | string })._id
+                instanceof Types.ObjectId
+              ? (student.careerId as { _id: Types.ObjectId })._id.toString()
+              : String((student.careerId as { _id: string })._id)
+            : String(student.careerId);
+
+      if (studentCareerId !== user.careerId) {
+        throw new ForbiddenException(
+          'No tienes permiso para ver este estudiante. Solo puedes ver estudiantes de tu carrera.',
+        );
+      }
     }
 
     return this.transformStudentWithCareer(student as Record<string, unknown>);
@@ -517,9 +549,17 @@ export class StudentsService {
     }
 
     const filePath = path.join(file.destination, file.filename);
+    const expectedStudentName = [student.firstName, student.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
     const validationResult = await validateSocialServiceDocumentWithOpenAI(
       filePath,
       this.configService,
+      {
+        expectedStudentName,
+        expectedIdentificationNumber: student.identificationNumber ?? '',
+      },
     );
 
     // Eliminar documento anterior si existe
@@ -575,9 +615,17 @@ export class StudentsService {
     }
 
     const filePath = path.join(file.destination, file.filename);
+    const expectedStudentName = [student.firstName, student.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
     const validationResult = await validatePassedSubjectsDocumentWithOpenAI(
       filePath,
       this.configService,
+      {
+        expectedStudentName,
+        expectedIdentificationNumber: student.identificationNumber ?? '',
+      },
     );
 
     // Eliminar documento anterior si existe
@@ -592,7 +640,6 @@ export class StudentsService {
       }
     }
 
-    // Guardar el documento y la respuesta de validación (siempre, incluso si falla)
     const documentData = {
       filePath: filePath,
       fileName: file.originalname,
@@ -601,21 +648,25 @@ export class StudentsService {
       validationErrors: validationResult.errors,
       validationWarnings: validationResult.warnings,
       hasValidFormat: validationResult.hasValidFormat,
-      passedSubjects: validationResult.passedSubjects,
+      passedSubjects: [],
       totalSubjects: validationResult.totalSubjects,
       passedCount: validationResult.passedCount,
+      validationAccuracyPercent: validationResult.validationAccuracyPercent,
     };
 
     student.passedSubjectsDocument = documentData;
     await student.save();
 
-    // Si la validación falla, lanzar error pero el archivo ya está guardado
     if (!validationResult.isValid) {
-      throw new BadRequestException(
+      const message =
         validationResult.errors.length > 0
           ? validationResult.errors.join(', ')
-          : 'El documento no pasó la validación. Verifica que tenga el formato correcto.',
-      );
+          : 'El documento no pasó la validación. Verifica que tenga el formato correcto.';
+      throw new BadRequestException({
+        message,
+        passedCount: validationResult.passedCount,
+        totalSubjects: validationResult.totalSubjects,
+      });
     }
 
     return student.toObject();
@@ -672,6 +723,97 @@ export class StudentsService {
 
     // Limpiar el documento del estudiante
     student.passedSubjectsDocument = undefined;
+    await student.save();
+
+    return student.toObject();
+  }
+
+  async uploadEnrollmentProofDocument(userId: string, file: MulterFile) {
+    const student = await this.studentModel
+      .findOne({ userId: new Types.ObjectId(userId) })
+      .exec();
+
+    if (!student) {
+      throw new NotFoundException('Estudiante no encontrado');
+    }
+
+    if (!file) {
+      throw new BadRequestException('No se proporcionó ningún archivo');
+    }
+
+    const filePath = path.join(file.destination, file.filename);
+    const expectedStudentName = [student.firstName, student.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    const validationResult = await validateEnrollmentProofDocumentWithOpenAI(
+      filePath,
+      this.configService,
+      {
+        expectedStudentName,
+        expectedIdentificationNumber: student.identificationNumber ?? '',
+      },
+    );
+
+    if (student.enrollmentProofDocument?.filePath) {
+      const oldFilePath = student.enrollmentProofDocument.filePath;
+      if (fs.existsSync(oldFilePath) && oldFilePath !== filePath) {
+        try {
+          fs.unlinkSync(oldFilePath);
+        } catch (error) {
+          console.error('Error deleting old enrollment proof document:', error);
+        }
+      }
+    }
+
+    const documentData = {
+      filePath,
+      fileName: file.originalname,
+      isValidated: validationResult.isValid,
+      validatedAt: new Date(),
+      validationErrors: validationResult.errors,
+      validationWarnings: validationResult.warnings,
+      documentStudentName: validationResult.documentStudentName,
+      documentIdentificationNumber: validationResult.documentIdentificationNumber,
+      cycle: validationResult.cycle,
+      enrolledSubjects: validationResult.enrolledSubjects,
+    };
+
+    student.enrollmentProofDocument = documentData;
+    await student.save();
+
+    if (!validationResult.isValid) {
+      throw new BadRequestException(
+        validationResult.errors.length > 0
+          ? validationResult.errors.join(', ')
+          : 'El comprobante de inscripción no pasó la validación. Verifica el formato.',
+      );
+    }
+
+    return student.toObject();
+  }
+
+  async deleteEnrollmentProofDocument(userId: string) {
+    const student = await this.studentModel
+      .findOne({ userId: new Types.ObjectId(userId) })
+      .exec();
+
+    if (!student) {
+      throw new NotFoundException('Estudiante no encontrado');
+    }
+
+    if (student.enrollmentProofDocument?.filePath) {
+      const filePath = student.enrollmentProofDocument.filePath;
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (error) {
+          console.error('Error deleting enrollment proof document file:', error);
+        }
+      }
+    }
+
+    student.enrollmentProofDocument = undefined;
     await student.save();
 
     return student.toObject();

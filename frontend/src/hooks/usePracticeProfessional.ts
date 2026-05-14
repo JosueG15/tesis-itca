@@ -146,8 +146,25 @@ export function useFinishPracticeProfessional() {
   const { success, error: showError } = useToast();
 
   return useMutation({
-    mutationFn: (studentId: string) =>
-      practiceProfessionalApi.finishPracticeProfessional(studentId),
+    mutationFn: ({
+      studentId,
+      earlyTerminationReason,
+      evaluation,
+    }: {
+      studentId: string;
+      earlyTerminationReason?: string;
+      evaluation: {
+        qualityAndOrganization: number;
+        knowledgeAndApplication: number;
+        learningCapacity: number;
+        attendanceAndPunctuality: number;
+        initiativeAndJudgment: number;
+      };
+    }) =>
+      practiceProfessionalApi.finishPracticeProfessional(studentId, {
+        earlyTerminationReason,
+        evaluation,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['practice-professional', 'company', 'student'],

@@ -49,6 +49,7 @@ export class AuthService {
       name: user.name,
       role: user.role,
       isTemporaryPassword: user.isTemporaryPassword || false,
+      careerId: user.careerId ? user.careerId.toString() : undefined,
     };
   }
 
@@ -76,6 +77,7 @@ export class AuthService {
         role: user.role,
         isTemporaryPassword: user.isTemporaryPassword,
         isProfileIncomplete,
+        careerId: user.careerId,
       },
     };
   }

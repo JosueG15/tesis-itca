@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Request,
+  BadRequestException,
 } from '@nestjs/common';
 import { OpportunitiesService } from '@/modules/opportunities/opportunities.service';
 import { CreateOpportunityDto } from '@/modules/opportunities/dto/create-opportunity.dto';
@@ -111,11 +112,11 @@ export class OpportunitiesController {
   }
 
   @Get('admin/all')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.COORDINADOR)
   @ApiOperation({
-    summary: 'Obtener todas las oportunidades (Admin)',
+    summary: 'Obtener todas las oportunidades (Admin/Coordinador)',
     description:
-      'Retorna todas las oportunidades de todas las empresas. Solo disponible para administradores.',
+      'Retorna todas las oportunidades. Para administradores muestra todas, para coordinadores solo las de su carrera.',
   })
   @ApiQuery({
     name: 'page',
@@ -146,6 +147,7 @@ export class OpportunitiesController {
     description: 'Lista de oportunidades obtenida exitosamente',
   })
   findAllForAdmin(
+    @Request() req: { user: { id: string; role: string; careerId?: string } },
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
@@ -153,11 +155,13 @@ export class OpportunitiesController {
   ) {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 10;
+    const careerId = req.user.role === UserRole.COORDINADOR ? req.user.careerId : undefined;
     return this.opportunitiesService.findAllForAdmin(
       pageNum,
       limitNum,
       search,
       status,
+      careerId,
     );
   }
 
@@ -293,6 +297,75 @@ export class OpportunitiesController {
       limitNumber,
       opportunityId,
       search,
+    );
+  }
+
+  @Get('applications/coordinator')
+  @Roles(UserRole.COORDINADOR)
+  @ApiOperation({
+    summary: 'Obtener todas las aplicaciones de los estudiantes de la carrera del coordinador',
+    description:
+      'Retorna todas las aplicaciones de los estudiantes de la carrera asignada al coordinador, incluyendo solicitudes a oportunidades de otras carreras. Incluye paginación y filtro por oportunidad y nombre de estudiante',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Aplicaciones obtenidas exitosamente',
+  })
+  getCoordinatorApplications(
+    @Request() req: { user: { id: string; role: string; careerId?: string } },
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('opportunityId') opportunityId?: string,
+    @Query('search') search?: string,
+  ) {
+    if (!req.user.careerId) {
+      throw new BadRequestException('El coordinador no tiene una carrera asignada');
+    }
+    const pageNumber = page ? parseInt(page, 10) : 1;
+    const limitNumber = limit ? parseInt(limit, 10) : 20;
+    return this.opportunitiesService.getCoordinatorApplications(
+      req.user.careerId,
+      pageNumber,
+      limitNumber,
+      opportunityId,
+      search,
+    );
+  }
+
+  @Patch('applications/:applicationId/accept')
+  @Roles(UserRole.COORDINADOR)
+  @ApiOperation({
+    summary: 'Aceptar una solicitud (Coordinador)',
+    description:
+      'Permite al coordinador aceptar una solicitud que esté en estado aprobada, cambiándola a aceptada. Solo se pueden aceptar hasta el número de vacantes disponibles. Un estudiante solo puede tener una solicitud aceptada a la vez.',
+  })
+  @ApiParam({
+    name: 'applicationId',
+    description: 'ID de la aplicación',
+    type: String,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Solicitud aceptada exitosamente',
+    type: ApplicationResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Aplicación no encontrada' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Ya se han aceptado todas las vacantes, la solicitud no está en estado aprobada, o el estudiante ya tiene otra solicitud aceptada',
+  })
+  acceptApplicationByCoordinator(
+    @Request() req: { user: { id: string; role: string; careerId?: string } },
+    @Param('applicationId') applicationId: string,
+  ) {
+    if (!req.user.careerId) {
+      throw new BadRequestException('El coordinador no tiene una carrera asignada');
+    }
+    return this.opportunitiesService.acceptApplicationByCoordinator(
+      applicationId,
+      req.user.id,
+      req.user.careerId,
     );
   }
 
@@ -514,7 +587,7 @@ export class OpportunitiesController {
   @ApiOperation({
     summary: 'Aplicar a una oportunidad laboral',
     description:
-      'Permite a un estudiante aplicar a una oportunidad laboral de su carrera',
+      'Permite a un estudiante aplicar a una oportunidad laboral',
   })
   @ApiResponse({
     status: 201,

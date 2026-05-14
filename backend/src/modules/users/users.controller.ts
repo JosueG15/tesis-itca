@@ -183,4 +183,25 @@ export class UsersController {
   toggleStatus(@Param('id') id: string) {
     return this.usersService.toggleStatus(id);
   }
+
+  @Post(':id/generate-temporary-password')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Generar contraseña temporal para un usuario' })
+  @ApiResponse({
+    status: 200,
+    description: 'Contraseña temporal generada exitosamente',
+    schema: {
+      type: 'object',
+      properties: {
+        generatedPassword: {
+          type: 'string',
+          example: 'aB3$kL9mN2pQ',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  generateTemporaryPassword(@Param('id') id: string) {
+    return this.usersService.generateTemporaryPassword(id);
+  }
 }

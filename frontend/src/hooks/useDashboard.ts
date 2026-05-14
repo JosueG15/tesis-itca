@@ -9,3 +9,12 @@ export function useDashboard() {
     refetchOnWindowFocus: true,
   });
 }
+
+export function useReports() {
+  return useQuery({
+    queryKey: ['dashboard', 'reports'],
+    queryFn: () => dashboardApi.getReports(),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}

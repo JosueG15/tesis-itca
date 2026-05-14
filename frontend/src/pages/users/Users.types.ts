@@ -25,6 +25,7 @@ export interface UserTableProps {
   onDelete: (user: User) => void;
   onView: (user: User) => void;
   onStatusChange: (user: User) => void;
+  onGeneratePassword?: (user: User) => void;
   getStatusBadge: (isActive: boolean) => React.ReactNode;
   selectionState: 'none' | 'partial' | 'all';
 }

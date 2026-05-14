@@ -8,4 +8,5 @@ docker-compose.yml
 .env.*
 !.env.template
 backend/uploads/*
+backups/
 

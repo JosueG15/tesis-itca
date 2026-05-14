@@ -92,6 +92,7 @@ export class Student {
       }],
       totalSubjects: Number,
       passedCount: Number,
+      validationAccuracyPercent: Number,
     },
     required: false,
   })
@@ -110,6 +111,45 @@ export class Student {
     }>;
     totalSubjects?: number;
     passedCount?: number;
+    validationAccuracyPercent?: number;
+  };
+
+  @Prop({
+    type: {
+      filePath: String,
+      fileName: String,
+      isValidated: Boolean,
+      validatedAt: Date,
+      validationErrors: [String],
+      validationWarnings: [String],
+      documentStudentName: String,
+      documentIdentificationNumber: String,
+      cycle: String,
+      enrolledSubjects: [{
+        name: String,
+        code: String,
+        startDate: String,
+        endDate: String,
+      }],
+    },
+    required: false,
+  })
+  enrollmentProofDocument?: {
+    filePath: string;
+    fileName: string;
+    isValidated: boolean;
+    validatedAt?: Date;
+    validationErrors?: string[];
+    validationWarnings?: string[];
+    documentStudentName?: string;
+    documentIdentificationNumber?: string;
+    cycle?: string;
+    enrolledSubjects?: Array<{
+      name: string;
+      code?: string;
+      startDate?: string;
+      endDate?: string;
+    }>;
   };
 
   @Prop({

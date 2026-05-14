@@ -5,6 +5,7 @@ export interface RequestUser {
   email: string;
   name: string;
   role: UserRole;
+  careerId?: string;
 }
 
 export interface AuthenticatedRequest {

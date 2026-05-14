@@ -180,6 +180,22 @@ export function useEvaluateApplication() {
   });
 }
 
+export function useAcceptApplicationByCoordinator() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (applicationId: string) =>
+      opportunitiesApi.acceptApplicationByCoordinator(applicationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['opportunities'] });
+      queryClient.invalidateQueries({
+        queryKey: ['opportunities', 'applications', 'coordinator'],
+      });
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+    },
+  });
+}
+
 export function useStudentsWithApplications(params?: {
   page?: number;
   limit?: number;
@@ -308,12 +324,15 @@ export function useSavedOpportunities(params?: {
   });
 }
 
-export function useMyApplications(params?: {
-  page?: number;
-  limit?: number;
-  search?: string;
-  status?: string;
-}) {
+export function useMyApplications(
+  params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    status?: string;
+  },
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: [
       'opportunities',
@@ -326,6 +345,7 @@ export function useMyApplications(params?: {
     ],
     queryFn: () => opportunitiesApi.getMyApplications(params),
     staleTime: 2 * 60 * 1000,
+    enabled: options?.enabled !== false,
   });
 }
 
@@ -356,6 +376,27 @@ export function useCompanyApplications(params?: {
       // Si hay aplicaciones sin calificar, refrescar cada 5 segundos
       return hasUnratedApplications ? 5000 : false;
     },
+  });
+}
+
+export function useCoordinatorApplications(params?: {
+  page?: number;
+  limit?: number;
+  opportunityId?: string;
+  search?: string;
+}) {
+  return useQuery({
+    queryKey: [
+      'opportunities',
+      'applications',
+      'coordinator',
+      params?.page,
+      params?.limit,
+      params?.opportunityId,
+      params?.search,
+    ],
+    queryFn: () => opportunitiesApi.getCoordinatorApplications(params),
+    staleTime: 2 * 60 * 1000,
   });
 }
 
@@ -396,4 +437,3 @@ export function useOpportunityApplicationsForAdmin(opportunityId: string) {
     enabled: !!opportunityId,
   });
 }
-

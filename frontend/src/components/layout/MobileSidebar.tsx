@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
-import { X, LayoutDashboard, Users, Building2, GraduationCap, Settings, FolderTree, Briefcase, FileText, BookOpen } from 'lucide-react';
+import { X, LayoutDashboard, Users, Building2, GraduationCap, Settings, FolderTree, Briefcase, FileText, BookOpen, BarChart3, History } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { UserRole } from '@/types/auth.types';
 import { Button } from '@/components/ui/button';
 import { useHasAcceptedApplication } from '@/hooks/useHasAcceptedApplication';
+import { useHasActivePractice } from '@/hooks/useHasActivePractice';
 
 interface MobileSidebarProps {
   open: boolean;
@@ -17,7 +18,7 @@ const navigation = [
         name: 'Dashboard',
         href: '/dashboard',
         icon: LayoutDashboard,
-        roles: [UserRole.ADMIN, UserRole.COMPANY, UserRole.ESTUDIANTE],
+        roles: [UserRole.ADMIN, UserRole.COMPANY, UserRole.ESTUDIANTE, UserRole.COORDINADOR],
       },
       {
         name: 'Oportunidades',
@@ -35,7 +36,7 @@ const navigation = [
         name: 'Oportunidades',
         href: '/admin/opportunities',
         icon: Briefcase,
-        roles: [UserRole.ADMIN],
+        roles: [UserRole.ADMIN, UserRole.COORDINADOR],
       },
       {
         name: 'Oportunidades Disponibles',
@@ -50,10 +51,16 @@ const navigation = [
         roles: [UserRole.ESTUDIANTE],
       },
       {
+        name: 'Solicitudes',
+        href: '/solicitudes-coordinador',
+        icon: FileText,
+        roles: [UserRole.COORDINADOR],
+      },
+      {
         name: 'Estudiantes',
         href: '/estudiantes',
         icon: GraduationCap,
-        roles: [UserRole.ADMIN, UserRole.COMPANY],
+        roles: [UserRole.ADMIN, UserRole.COMPANY, UserRole.COORDINADOR],
       },
       {
         name: 'Empresas',
@@ -80,22 +87,39 @@ const navigation = [
         roles: [UserRole.ADMIN],
       },
       {
+        name: 'Reportes',
+        href: '/reports',
+        icon: BarChart3,
+        roles: [UserRole.ADMIN],
+      },
+      {
         name: 'Configuración',
         href: '/settings',
         icon: Settings,
-        roles: [UserRole.ADMIN, UserRole.COMPANY, UserRole.ESTUDIANTE],
+        roles: [UserRole.ADMIN, UserRole.COMPANY, UserRole.ESTUDIANTE, UserRole.COORDINADOR],
       },
     ];
 
 export function MobileSidebar({ open, onClose }: MobileSidebarProps) {
   const { hasAnyRole, user } = useAuth();
   const hasAcceptedApplication = useHasAcceptedApplication();
+  const hasActivePractice = useHasActivePractice();
 
-  const filteredNavigation = navigation.filter((item) =>
-    hasAnyRole(item.roles),
-  );
+  const filteredNavigation = navigation.filter((item) => {
+    if (!hasAnyRole(item.roles)) {
+      return false;
+    }
+    if (
+      item.name === 'Dashboard' &&
+      user?.role === UserRole.ESTUDIANTE &&
+      hasActivePractice
+    ) {
+      return false;
+    }
+    return true;
+  });
 
-  // Agregar "Mi Práctica Profesional" si el estudiante tiene una solicitud aceptada
+  // Agregar "Mi Práctica Profesional" e "Historial de Prácticas" si el estudiante tiene una solicitud aceptada
   const navigationWithPractice = useMemo(() => {
     if (user?.role === UserRole.ESTUDIANTE && hasAcceptedApplication) {
       const practiceIndex = filteredNavigation.findIndex(
@@ -107,6 +131,12 @@ export function MobileSidebar({ open, onClose }: MobileSidebarProps) {
           name: 'Mi Práctica Profesional',
           href: '/mi-practica-profesional',
           icon: BookOpen,
+          roles: [UserRole.ESTUDIANTE],
+        });
+        newNavigation.splice(practiceIndex + 2, 0, {
+          name: 'Historial de Prácticas',
+          href: '/historial-practicas',
+          icon: History,
           roles: [UserRole.ESTUDIANTE],
         });
         return newNavigation;

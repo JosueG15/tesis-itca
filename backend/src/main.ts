@@ -18,7 +18,20 @@ async function bootstrap() {
     }),
   );
 
-  app.enableCors();
+  // CORS configuration
+  const frontendUrl = configService.get<string>('frontendUrl') || 'http://localhost:5173';
+  app.enableCors({
+    origin: [
+      frontendUrl,
+      'http://51.79.73.103',
+      'http://localhost:5173',
+      'http://localhost:3000',
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+    exposedHeaders: ['Content-Type', 'Authorization'],
+  });
 
   const uploadsPath = join(__dirname, '..', 'uploads', 'logos');
   app.useStaticAssets(uploadsPath, {

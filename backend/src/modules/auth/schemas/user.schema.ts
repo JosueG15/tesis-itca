@@ -7,6 +7,7 @@ export enum UserRole {
   ADMIN = 'admin',
   COMPANY = 'company',
   ESTUDIANTE = 'estudiante',
+  COORDINADOR = 'coordinador',
 }
 
 @Schema({ timestamps: true })
@@ -26,6 +27,9 @@ export class User {
   @Prop({ type: Types.ObjectId, ref: 'Company', required: false })
   companyId?: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'Career', required: false })
+  careerId?: Types.ObjectId;
+
   @Prop({ default: true })
   isActive: boolean;
 
@@ -36,3 +40,4 @@ export class User {
 export const UserSchema = SchemaFactory.createForClass(User);
 
 UserSchema.index({ companyId: 1 });
+UserSchema.index({ careerId: 1 });

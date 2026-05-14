@@ -247,6 +247,7 @@ export function StudentOpportunitiesPage() {
                   onApply={() => handleApply(displayedOpportunity)}
                   getTimeAgo={getTimeAgo}
                   hasAcceptedApplication={hasAcceptedApplication}
+                  isApplying={createApplicationMutation.isPending}
                 />
               ) : (
                 <div className="p-6 sm:p-8 md:p-12 text-center">

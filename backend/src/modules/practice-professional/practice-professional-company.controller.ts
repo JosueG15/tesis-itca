@@ -24,6 +24,7 @@ import { PracticeProfessionalService } from './practice-professional.service';
 import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
 import { ActivitiesResponseDto } from './dto/activities-response.dto';
 import { ActivityResponseDto } from './dto/activity-response.dto';
+import { FinishPracticeDto } from './dto/finish-practice.dto';
 
 @ApiTags('Práctica Profesional - Empresa')
 @ApiBearerAuth()
@@ -152,7 +153,7 @@ export class PracticeProfessionalCompanyController {
   @ApiOperation({
     summary: 'Finalizar práctica profesional de un estudiante',
     description:
-      'Marca la práctica profesional como finalizada. Solo puede ser ejecutado por empresas que tienen acceso a la oportunidad del estudiante.',
+      'Marca la práctica profesional como finalizada. Si las horas aprobadas son menores a las horas requeridas, se debe proporcionar un motivo de finalización anticipada. Solo puede ser ejecutado por empresas que tienen acceso a la oportunidad del estudiante.',
   })
   @ApiParam({
     name: 'studentId',
@@ -179,16 +180,18 @@ export class PracticeProfessionalCompanyController {
   @ApiResponse({
     status: 400,
     description:
-      'No tienes permiso para finalizar la práctica profesional de este estudiante o la práctica ya está finalizada',
+      'No tienes permiso para finalizar la práctica profesional de este estudiante, la práctica ya está finalizada, o falta el motivo de finalización anticipada',
   })
   async finishPracticeProfessional(
     @Request() req: { user: { id: string } },
     @Param('studentId') studentId: string,
+    @Body() finishDto: FinishPracticeDto,
   ): Promise<{ message: string }> {
     const result =
       await this.practiceProfessionalService.finishPracticeProfessional(
         studentId,
         req.user.id,
+        finishDto,
       );
     return result;
   }

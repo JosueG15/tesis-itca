@@ -5,6 +5,7 @@ import {
   useCreateActivity,
   usePracticeActivities,
 } from '@/hooks/usePracticeProfessional';
+import { useHolidays } from '@/hooks/useHolidays';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -68,6 +69,8 @@ export function MyPracticeProfessionalPage() {
   const createActivityMutation = useCreateActivity();
   const { data: userProfile } = useUserProfile();
   const toast = useToastContext();
+  const currentYear = new Date().getFullYear();
+  const { data: holidays = [] } = useHolidays(currentYear);
 
   const handleOpenCreateDialog = () => {
     setFormData({
@@ -91,22 +94,90 @@ export function MyPracticeProfessionalPage() {
 
   const handleSubmitActivity = async () => {
     if (!formData.description.trim()) {
+      toast.error('Error', 'La descripción es requerida');
       return;
     }
     if (formData.hours <= 0) {
+      toast.error('Error', 'Las horas deben ser mayor a 0');
       return;
     }
     if (!formData.equipmentOrTool.trim()) {
+      toast.error('Error', 'La maquinaria o herramienta es requerida');
+      return;
+    }
+
+    const selectedDate = formData.activityDate.split('T')[0];
+    if (holidays.includes(selectedDate)) {
+      toast.error('Error', 'No se pueden registrar actividades en días festivos');
+      return;
+    }
+
+    const activities = practiceData?.activities || [];
+    const selectedDateStr = formData.activityDate.split('T')[0];
+
+    const activitiesOnSameDate = activities.filter((activity) => {
+      const actDate = new Date(activity.activityDate);
+      const actDateStr = actDate.toISOString().split('T')[0];
+      return actDateStr === selectedDateStr;
+    });
+
+    const dailyHours = activitiesOnSameDate.reduce(
+      (sum, activity) => sum + (activity.hours || 0),
+      0,
+    );
+
+    if (dailyHours + formData.hours > 8) {
+      toast.error(
+        'Error',
+        `No puedes registrar más de 8 horas por día. Ya tienes ${dailyHours} horas registradas en esta fecha.`,
+      );
+      return;
+    }
+
+    const [year, month, day] = selectedDateStr.split('-').map(Number);
+    const activityDate = new Date(year, month - 1, day);
+    const dayOfWeek = activityDate.getDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const mondayDate = new Date(activityDate);
+    mondayDate.setDate(mondayDate.getDate() - daysToMonday);
+    mondayDate.setHours(0, 0, 0, 0);
+
+    const sundayDate = new Date(mondayDate);
+    sundayDate.setDate(sundayDate.getDate() + 6);
+    sundayDate.setHours(23, 59, 59, 999);
+
+    const activitiesInSameWeek = activities.filter((activity) => {
+      const actDate = new Date(activity.activityDate);
+      const actDateStr = actDate.toISOString().split('T')[0];
+      const [actYear, actMonth, actDay] = actDateStr.split('-').map(Number);
+      const actDateNormalized = new Date(actYear, actMonth - 1, actDay);
+      return actDateNormalized >= mondayDate && actDateNormalized <= sundayDate;
+    });
+
+    const weeklyHours = activitiesInSameWeek.reduce(
+      (sum, activity) => sum + (activity.hours || 0),
+      0,
+    );
+
+    if (weeklyHours + formData.hours > 40) {
+      toast.error(
+        'Error',
+        `No puedes registrar más de 40 horas por semana. Ya tienes ${weeklyHours} horas registradas esta semana.`,
+      );
       return;
     }
 
     try {
       await createActivityMutation.mutateAsync(formData);
       handleCloseCreateDialog();
-      // Reset to first page after creating new activity
       setPage(1);
-    } catch {
-      // Error is handled by the mutation
+    } catch (error) {
+      const errorMessage =
+        (error as { response?: { data?: { message?: string } } })?.response
+          ?.data?.message ||
+        (error as { message?: string })?.message ||
+        'No se pudo crear la actividad. Intenta nuevamente.';
+      toast.error('Error', errorMessage);
     }
   };
 
@@ -197,7 +268,7 @@ export function MyPracticeProfessionalPage() {
             {isNotFound
               ? 'Actualmente no estás participando en ninguna práctica profesional. Cuando una empresa acepte tu solicitud, podrás gestionar tus actividades aquí.'
               : (error as { message?: string })?.message ||
-                'Ocurrió un error al cargar la información. Por favor, intenta nuevamente.'}
+              'Ocurrió un error al cargar la información. Por favor, intenta nuevamente.'}
           </p>
           {isNotFound && (
             <div className="mt-4">

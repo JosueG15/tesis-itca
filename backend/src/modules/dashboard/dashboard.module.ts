@@ -24,6 +24,10 @@ import {
   PracticeActivity,
   PracticeActivitySchema,
 } from '@/modules/practice-professional/schemas/practice-activity.schema';
+import {
+  Student,
+  StudentSchema,
+} from '@/modules/students/schemas/student.schema';
 
 @Module({
   imports: [
@@ -35,6 +39,7 @@ import {
       { name: Opportunity.name, schema: OpportunitySchema },
       { name: Application.name, schema: ApplicationSchema },
       { name: PracticeActivity.name, schema: PracticeActivitySchema },
+      { name: Student.name, schema: StudentSchema },
     ]),
   ],
   controllers: [DashboardController],

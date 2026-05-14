@@ -149,7 +149,7 @@ export function CompanyApplicationsPage() {
         data: {
           status:
             actionType === 'accept'
-              ? ApplicationStatusValues.ACCEPTED
+              ? ApplicationStatusValues.APPROVED
               : ApplicationStatusValues.REJECTED,
           rejectionReason:
             actionType === 'reject' ? rejectionReason : undefined,
@@ -157,8 +157,8 @@ export function CompanyApplicationsPage() {
       });
 
       toast.success(
-        `Solicitud ${actionType === 'accept' ? 'aceptada' : 'rechazada'}`,
-        `La solicitud ha sido ${actionType === 'accept' ? 'aceptada' : 'rechazada'} correctamente.`,
+        `Solicitud ${actionType === 'accept' ? 'aprobada' : 'rechazada'}`,
+        `La solicitud ha sido ${actionType === 'accept' ? 'aprobada' : 'rechazada'} correctamente.`,
       );
 
       setSelectedApplication(null);
@@ -180,18 +180,21 @@ export function CompanyApplicationsPage() {
 
   const getApplicationStatusBadge = (status: string) => {
     const labels = {
+      [ApplicationStatusValues.PENDING]: 'Pendiente',
+      [ApplicationStatusValues.APPROVED]: 'Aprobada',
       [ApplicationStatusValues.ACCEPTED]: 'Aceptada',
       [ApplicationStatusValues.REJECTED]: 'Rechazada',
-      [ApplicationStatusValues.PENDING]: 'Pendiente',
     };
 
     const statusColors: Record<string, string> = {
+      [ApplicationStatusValues.PENDING]:
+        'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700',
+      [ApplicationStatusValues.APPROVED]:
+        'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
       [ApplicationStatusValues.ACCEPTED]:
         'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800',
       [ApplicationStatusValues.REJECTED]:
         'bg-red-600 dark:bg-red-700 text-white border-red-700 dark:border-red-800',
-      [ApplicationStatusValues.PENDING]:
-        'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700',
     };
 
     const statusColor = statusColors[status] || statusColors[ApplicationStatusValues.PENDING];

@@ -100,10 +100,29 @@ export interface Student {
     hasValidFormat?: boolean;
     passedCount?: number;
     totalSubjects?: number;
+    validationAccuracyPercent?: number;
     passedSubjects?: Array<{
       cycle: string;
       code: string;
+      name?: string;
+      subject?: string;
+    }>;
+  };
+  enrollmentProofDocument?: {
+    filePath: string;
+    fileName: string;
+    isValidated: boolean;
+    validatedAt?: string;
+    validationErrors?: string[];
+    validationWarnings?: string[];
+    documentStudentName?: string;
+    documentIdentificationNumber?: string;
+    cycle?: string;
+    enrolledSubjects?: Array<{
       name: string;
+      code?: string;
+      startDate?: string;
+      endDate?: string;
     }>;
   };
   workExperience?: WorkExperience[];

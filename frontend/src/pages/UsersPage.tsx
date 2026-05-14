@@ -1,8 +1,9 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, User as UserIcon, Download } from 'lucide-react';
+import { Plus, User as UserIcon, Download, Copy, Check, Key } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { formatDate } from '@/utils/date.utils';
 import { exportToCSV } from '@/utils/export.utils';
 import { AutocompleteSearch } from '@/components/ui/autocomplete-search';
@@ -10,10 +11,13 @@ import {
   useUsers,
   useDeleteUser,
   useToggleUserStatus,
+  useGenerateTemporaryPassword,
 } from '@/hooks/useUsers';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useToastContext } from '@/contexts/ToastContext';
 import { Tooltip } from '@/components/ui/tooltip';
+import { getRoleLabel } from '@/utils/role.utils';
+import { UserRole } from '@/types/auth.types';
 import type { User } from '@/types/user.types';
 import type {
   SortConfig,
@@ -95,6 +99,10 @@ export function UsersPage() {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [confirmType, setConfirmType] = useState<'delete' | null>(null);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [userForPassword, setUserForPassword] = useState<User | null>(null);
+  const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
 
   const limit = 10;
   const queryParams = useMemo(
@@ -128,6 +136,7 @@ export function UsersPage() {
   const { data, isLoading } = useUsers(queryParams);
   const deleteMutation = useDeleteUser();
   const toggleStatusMutation = useToggleUserStatus();
+  const generatePasswordMutation = useGenerateTemporaryPassword();
   const toast = useToastContext();
 
   const users = useMemo(() => data?.data ?? [], [data?.data]);
@@ -283,6 +292,47 @@ export function UsersPage() {
     },
     [toggleStatusMutation, toast],
   );
+
+  const handleGeneratePassword = useCallback(
+    async (user: User) => {
+      try {
+        const response = await generatePasswordMutation.mutateAsync(user._id);
+        setUserForPassword(user);
+        setGeneratedPassword(response.generatedPassword);
+        setIsPasswordDialogOpen(true);
+        toast.success(
+          'Contraseña generada',
+          `Se ha generado una nueva contraseña temporal para "${user.name}".`,
+        );
+      } catch (error: unknown) {
+        const errorMessage =
+          (error as { response?: { data?: { message?: string } } })?.response
+            ?.data?.message || 'Error al generar la contraseña';
+        toast.error('Error al generar contraseña', errorMessage);
+      }
+    },
+    [generatePasswordMutation, toast],
+  );
+
+  const handleCopyPassword = useCallback(async () => {
+    if (generatedPassword) {
+      try {
+        await navigator.clipboard.writeText(generatedPassword);
+        setCopied(true);
+        toast.success('Contraseña copiada', 'La contraseña ha sido copiada al portapapeles.');
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        toast.error('Error al copiar', 'No se pudo copiar la contraseña.');
+      }
+    }
+  }, [generatedPassword, toast]);
+
+  const handleClosePasswordDialog = useCallback(() => {
+    setIsPasswordDialogOpen(false);
+    setGeneratedPassword(null);
+    setUserForPassword(null);
+    setCopied(false);
+  }, []);
 
   const toggleSelectAll = useCallback(() => {
     setSelectedIds((prev) =>
@@ -573,6 +623,7 @@ export function UsersPage() {
                   onDelete={handleDelete}
                   onView={handleView}
                   onStatusChange={handleToggleStatus}
+                  onGeneratePassword={handleGeneratePassword}
                   getStatusBadge={getStatusBadge}
                   selectionState={selectionState}
                 />
@@ -595,7 +646,11 @@ export function UsersPage() {
           open={isFormOpen}
           onOpenChange={setIsFormOpen}
           user={editingUser}
-          onSuccess={() => setIsFormOpen(false)}
+          onSuccess={() => {
+            // El modal se cierra desde el componente hijo cuando el usuario hace clic en "Cerrar"
+            // Solo cerramos si no hay contraseña generada (caso de edición)
+            setIsFormOpen(false);
+          }}
         />
 
         <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
@@ -619,6 +674,23 @@ export function UsersPage() {
                     <p className="text-xs sm:text-sm break-words">
                       {selectedUser.email}
                     </p>
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">
+                      Rol
+                    </p>
+                    <Badge
+                      variant={
+                        selectedUser.role === UserRole.ADMIN
+                          ? 'default'
+                          : selectedUser.role === UserRole.COORDINADOR
+                            ? 'secondary'
+                            : 'outline'
+                      }
+                      className="text-xs"
+                    >
+                      {getRoleLabel(selectedUser.role)}
+                    </Badge>
                   </div>
                   <div>
                     <p className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">
@@ -676,6 +748,64 @@ export function UsersPage() {
           variant="destructive"
           loading={deleteMutation.isPending}
         />
+
+        <Dialog open={isPasswordDialogOpen} onOpenChange={handleClosePasswordDialog}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto mx-3 sm:mx-4">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <Key className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
+                <span className="break-words">
+                  Contraseña generada para {userForPassword?.name}
+                </span>
+              </DialogTitle>
+              <DialogDescription className="text-xs sm:text-sm">
+                Copia esta contraseña para enviarla al usuario por correo
+              </DialogDescription>
+            </DialogHeader>
+            {generatedPassword && (
+              <div className="space-y-4 py-4">
+                <div className="p-4 bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-800 rounded-lg">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-primary-900 dark:text-primary-100 mb-1">
+                        Contraseña temporal generada
+                      </p>
+                      <p className="text-xs text-primary-700 dark:text-primary-300 mb-2">
+                        Esta contraseña debe ser cambiada en el primer inicio de sesión
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 px-3 py-2 bg-white dark:bg-slate-800 border border-primary-200 dark:border-primary-700 rounded text-sm font-mono text-slate-900 dark:text-slate-100">
+                          {generatedPassword}
+                        </code>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleCopyPassword}
+                          className="shrink-0"
+                        >
+                          {copied ? (
+                            <Check className="h-4 w-4 text-green-600" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                  <Button
+                    type="button"
+                    onClick={handleClosePasswordDialog}
+                  >
+                    Cerrar
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

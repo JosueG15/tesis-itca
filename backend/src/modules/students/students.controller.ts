@@ -317,8 +317,98 @@ export class StudentsController {
     return this.studentsService.deletePassedSubjectsDocument(req.user.id);
   }
 
+  @Post('my-profile/enrollment-proof-document')
+  @Roles(UserRole.ESTUDIANTE)
+  @UseGuards(StudentOwnershipGuard)
+  @UseInterceptors(
+    FileInterceptor('document', {
+      storage: diskStorage({
+        destination: (
+          _req: unknown,
+          _file: { originalname?: string },
+          cb: (error: Error | null, destination: string) => void,
+        ) => {
+          const uploadsDir = './uploads/documents';
+          if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+          }
+          cb(null, uploadsDir);
+        },
+        filename: (
+          _req: unknown,
+          file: { originalname?: string },
+          cb: (error: Error | null, filename: string) => void,
+        ) => {
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname || '');
+          cb(null, `enrollment-proof-${uniqueSuffix}${ext}`);
+        },
+      }),
+      fileFilter: (
+        _req: unknown,
+        file: { mimetype?: string },
+        cb: (error: Error | null, acceptFile: boolean) => void,
+      ) => {
+        if (file.mimetype === 'application/pdf') {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException('Solo se permiten archivos PDF'),
+            false,
+          );
+        }
+      },
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  @ApiOperation({
+    summary: 'Subir y validar comprobante de inscripción',
+    description:
+      'Permite al estudiante subir su comprobante de inscripción de asignaturas para validación. Se verifica nombre, carnet y formato.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Documento subido y validado exitosamente',
+    type: StudentResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'El documento no pasó la validación',
+  })
+  async uploadEnrollmentProofDocument(
+    @Request() req: { user: { id: string } },
+    @UploadedFile() file?: MulterFile,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No se proporcionó ningún archivo');
+    }
+    return this.studentsService.uploadEnrollmentProofDocument(req.user.id, file);
+  }
+
+  @Delete('my-profile/enrollment-proof-document')
+  @Roles(UserRole.ESTUDIANTE)
+  @UseGuards(StudentOwnershipGuard)
+  @ApiOperation({
+    summary: 'Eliminar comprobante de inscripción',
+    description: 'Elimina el comprobante de inscripción y sus validaciones.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Documento eliminado exitosamente',
+    type: StudentResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acceso denegado - Solo estudiantes pueden eliminar sus propios documentos',
+  })
+  @ApiResponse({ status: 404, description: 'Estudiante no encontrado' })
+  deleteEnrollmentProofDocument(@Request() req: { user: { id: string } }) {
+    return this.studentsService.deleteEnrollmentProofDocument(req.user.id);
+  }
+
   @Get()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.COORDINADOR)
   @ApiOperation({ summary: 'Obtener todos los estudiantes' })
   @ApiQuery({
     name: 'page',
@@ -389,6 +479,7 @@ export class StudentsController {
     type: [StudentResponseDto],
   })
   findAll(
+    @Request() req: { user: { id: string; role: string; careerId?: string } },
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
@@ -404,11 +495,17 @@ export class StudentsController {
     const limitNum = limit ? parseInt(limit, 10) : 10;
     const isActiveFilter =
       isActive !== undefined ? isActive === 'true' : undefined;
+    
+    // Si es coordinador, usar su careerId asignado (ignorar el parámetro careerId del query)
+    const finalCareerId = req.user.role === UserRole.COORDINADOR 
+      ? req.user.careerId 
+      : careerId;
+    
     return this.studentsService.findAll(
       pageNum,
       limitNum,
       search,
-      careerId,
+      finalCareerId,
       status,
       isActiveFilter,
       sortBy,
@@ -419,11 +516,11 @@ export class StudentsController {
   }
 
   @Get(':id')
-  @Roles(UserRole.ADMIN, UserRole.COMPANY)
+  @Roles(UserRole.ADMIN, UserRole.COMPANY, UserRole.COORDINADOR)
   @ApiOperation({
     summary: 'Obtener un estudiante por ID',
     description:
-      'Permite a administradores y empresas obtener información de un estudiante. Las empresas pueden ver estudiantes que han aplicado a sus oportunidades.',
+      'Permite a administradores, empresas y coordinadores obtener información de un estudiante. Las empresas pueden ver estudiantes que han aplicado a sus oportunidades. Los coordinadores solo pueden ver estudiantes de su carrera.',
   })
   @ApiResponse({
     status: 200,
@@ -433,10 +530,13 @@ export class StudentsController {
   @ApiResponse({ status: 404, description: 'Estudiante no encontrado' })
   @ApiResponse({
     status: 403,
-    description: 'Acceso denegado - Solo administradores y empresas pueden acceder',
+    description: 'Acceso denegado - No tienes permiso para ver este estudiante',
   })
-  findOne(@Param('id') id: string) {
-    return this.studentsService.findOne(id);
+  findOne(
+    @Request() req: { user: { id: string; role: string; careerId?: string } },
+    @Param('id') id: string,
+  ) {
+    return this.studentsService.findOne(id, req.user);
   }
 
   @Patch(':id')

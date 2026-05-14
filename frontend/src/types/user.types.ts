@@ -5,6 +5,7 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  careerId?: string;
   isActive: boolean;
   isTemporaryPassword: boolean;
   createdAt: string;
@@ -14,6 +15,8 @@ export interface User {
 export interface CreateUserDto {
   name: string;
   email: string;
+  role: UserRole;
+  careerId?: string;
 }
 
 export interface UpdateUserDto extends Partial<CreateUserDto> {

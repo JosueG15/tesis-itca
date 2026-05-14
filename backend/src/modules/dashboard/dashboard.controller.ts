@@ -19,7 +19,7 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.COMPANY, UserRole.ESTUDIANTE)
+  @Roles(UserRole.ADMIN, UserRole.COMPANY, UserRole.ESTUDIANTE, UserRole.COORDINADOR)
   @ApiOperation({
     summary: 'Obtener datos del dashboard',
     description: 'Retorna información del dashboard del usuario autenticado',
@@ -36,7 +36,29 @@ export class DashboardController {
     status: 403,
     description: 'Acceso denegado - Rol no permitido',
   })
-  async getDashboard(@Request() req: { user: { id: string; role: string } }) {
-    return await this.dashboardService.getStats(req.user.id, req.user.role);
+  async getDashboard(@Request() req: { user: { id: string; role: string; careerId?: string } }) {
+    return await this.dashboardService.getStats(req.user.id, req.user.role, req.user.careerId);
+  }
+
+  @Get('reports')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Obtener reportes administrativos',
+    description: 'Retorna datos agregados para análisis y reportes del sistema',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Reportes obtenidos exitosamente',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'No autorizado',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acceso denegado - Solo administradores',
+  })
+  async getReports() {
+    return await this.dashboardService.getAdminReports();
   }
 }

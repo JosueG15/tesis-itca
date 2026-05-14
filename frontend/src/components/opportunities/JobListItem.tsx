@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Building2, MapPin, Loader2, CheckCircle } from 'lucide-react';
 import type { Opportunity } from '@/types/opportunity.types';
 import { getImageUrl } from '@/lib/utils';
+import { StarRating } from '@/components/ui/star-rating';
 
 interface JobListItemProps {
   opportunity: Opportunity;
@@ -106,6 +107,17 @@ export function JobListItem({
               </>
             )}
           </div>
+
+          {/* Match Score */}
+          {opportunity.matchScore !== undefined &&
+            opportunity.matchScore !== null && (
+              <div className="mt-2 flex items-center gap-2">
+                <StarRating rating={opportunity.matchScore} size={14} />
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  Match con tu perfil
+                </span>
+              </div>
+            )}
         </div>
       </div>
     </div>

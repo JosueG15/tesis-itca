@@ -32,6 +32,16 @@ export class ActivityResponseDto {
   })
   rejectionReason?: string;
 
+  @ApiProperty({
+    description: 'Evaluación de relevancia con OpenAI (solo para actividades pendientes de aprobación)',
+    required: false,
+    example: { type: 'approval', message: 'La actividad reportada está alineada con los objetivos y requerimientos de la oportunidad de práctica profesional.' },
+  })
+  evaluation?: {
+    type: 'warning' | 'approval';
+    message: string;
+  };
+
   @ApiProperty({ description: 'Fecha de creación' })
   createdAt: Date;
 

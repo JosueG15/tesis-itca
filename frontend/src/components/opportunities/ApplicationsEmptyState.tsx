@@ -14,6 +14,10 @@ const emptyStateMessages: Record<
     title: 'No hay solicitudes',
     description: 'Aún no has aplicado a ninguna oportunidad.',
   },
+  approved: {
+    title: 'No hay solicitudes aprobadas',
+    description: 'Aún no tienes solicitudes aprobadas por empresas.',
+  },
   accepted: {
     title: 'No hay solicitudes aceptadas',
     description: 'Aún no tienes solicitudes aceptadas.',

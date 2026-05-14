@@ -5,6 +5,7 @@ export type ApplicationDocument = Application & Document;
 
 export enum ApplicationStatus {
   PENDING = 'pendiente',
+  APPROVED = 'aprobada',
   ACCEPTED = 'aceptada',
   REJECTED = 'rechazada',
 }
@@ -35,6 +36,26 @@ export class Application {
 
   @Prop({ type: Date })
   finalizedAt?: Date;
+
+  @Prop()
+  earlyTerminationReason?: string;
+
+  @Prop({
+    type: {
+      qualityAndOrganization: { type: Number, min: 1, max: 5 },
+      knowledgeAndApplication: { type: Number, min: 1, max: 5 },
+      learningCapacity: { type: Number, min: 1, max: 5 },
+      attendanceAndPunctuality: { type: Number, min: 1, max: 5 },
+      initiativeAndJudgment: { type: Number, min: 1, max: 5 },
+    },
+  })
+  practiceEvaluation?: {
+    qualityAndOrganization: number;
+    knowledgeAndApplication: number;
+    learningCapacity: number;
+    attendanceAndPunctuality: number;
+    initiativeAndJudgment: number;
+  };
 
   createdAt: Date;
   updatedAt: Date;

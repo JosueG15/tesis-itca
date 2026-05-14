@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 
-export type ApplicationTabType = 'saved' | 'applied' | 'accepted' | 'rejected';
+export type ApplicationTabType = 'saved' | 'applied' | 'approved' | 'accepted' | 'rejected';
 
 interface Tab {
   id: ApplicationTabType;
@@ -15,6 +15,7 @@ interface ApplicationsTabNavigationProps {
 const tabs: Tab[] = [
   { id: 'saved', label: 'Guardado' },
   { id: 'applied', label: 'Solicitados' },
+  { id: 'approved', label: 'Aprobadas' },
   { id: 'accepted', label: 'Aceptados' },
   { id: 'rejected', label: 'Rechazados' },
 ];

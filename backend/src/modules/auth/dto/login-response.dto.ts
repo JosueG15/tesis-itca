@@ -38,6 +38,13 @@ export class UserResponseDto {
     required: false,
   })
   isProfileIncomplete?: boolean;
+
+  @ApiProperty({
+    description: 'ID de la carrera (solo para coordinadores)',
+    example: '507f1f77bcf86cd799439011',
+    required: false,
+  })
+  careerId?: string;
 }
 
 export class LoginResponseDto {

@@ -185,6 +185,7 @@ export class OpportunitiesService {
     limit = 10,
     search?: string,
     status?: string,
+    careerId?: string,
   ) {
     const skip = (page - 1) * limit;
     const query: {
@@ -193,6 +194,7 @@ export class OpportunitiesService {
         description?: { $regex: string; $options: string };
       }>;
       status?: string;
+      careerId?: Types.ObjectId;
     } = {};
 
     if (search) {
@@ -204,6 +206,10 @@ export class OpportunitiesService {
 
     if (status) {
       query.status = status;
+    }
+
+    if (careerId) {
+      query.careerId = new Types.ObjectId(careerId);
     }
 
     const [data, total] = await Promise.all([
@@ -630,40 +636,20 @@ export class OpportunitiesService {
       }
     }
 
+    // Cuando la empresa acepta, debe cambiar a "aprobada" en lugar de "aceptada"
     if (updateStatusDto.status === ApplicationStatus.ACCEPTED) {
-      if (application.status === ApplicationStatus.ACCEPTED) {
-        throw new BadRequestException('Esta aplicación ya está aceptada');
+      // Cambiar a "aprobada" cuando la empresa acepta
+      updateStatusDto.status = ApplicationStatus.APPROVED;
+    }
+
+    if (updateStatusDto.status === ApplicationStatus.APPROVED) {
+      if (application.status === ApplicationStatus.APPROVED) {
+        throw new BadRequestException('Esta aplicación ya está aprobada');
       }
 
       if (opportunity.status === OpportunityStatus.CLOSED) {
         throw new BadRequestException(
-          'No se pueden aceptar más aplicaciones. La oportunidad está cerrada.',
-        );
-      }
-
-      // Verificar que el estudiante no tenga otra solicitud aprobada
-      const otherAcceptedApplication = await this.applicationModel
-        .findOne({
-          studentId: application.studentId,
-          status: ApplicationStatus.ACCEPTED,
-          _id: { $ne: application._id },
-        })
-        .exec();
-
-      if (otherAcceptedApplication) {
-        throw new BadRequestException(
-          'Este estudiante ya tiene una solicitud aprobada. Solo puede tener una solicitud aprobada a la vez.',
-        );
-      }
-
-      const acceptedCount = await this.applicationModel.countDocuments({
-        opportunityId: opportunity._id,
-        status: ApplicationStatus.ACCEPTED,
-      });
-
-      if (acceptedCount >= opportunity.availablePositions) {
-        throw new BadRequestException(
-          `Ya se han aceptado todas las vacantes disponibles (${acceptedCount}/${opportunity.availablePositions}). No se pueden aceptar más aplicaciones.`,
+          'No se pueden aprobar más aplicaciones. La oportunidad está cerrada.',
         );
       }
     }
@@ -691,21 +677,149 @@ export class OpportunitiesService {
       .populate('opportunityId')
       .exec();
 
-    if (updateStatusDto.status === ApplicationStatus.ACCEPTED) {
-      const acceptedCount = await this.applicationModel.countDocuments({
-        opportunityId: opportunity._id,
-        status: ApplicationStatus.ACCEPTED,
-      });
+    return updatedApplication;
+  }
 
-      if (acceptedCount >= opportunity.availablePositions) {
-        await this.opportunityModel.findByIdAndUpdate(
-          opportunity._id,
-          {
-            status: OpportunityStatus.CLOSED,
-          },
-          { new: true },
-        );
-      }
+  async acceptApplicationByCoordinator(
+    applicationId: string,
+    userId: string,
+    careerId: string,
+  ) {
+    const application = await this.applicationModel
+      .findById(applicationId)
+      .populate({
+        path: 'opportunityId',
+        populate: { path: 'careerId' },
+      })
+      .exec();
+
+    if (!application) {
+      throw new NotFoundException('Aplicación no encontrada');
+    }
+
+    const opportunity = await this.opportunityModel.findById(
+      application.opportunityId,
+    );
+
+    if (!opportunity) {
+      throw new NotFoundException('Oportunidad no encontrada');
+    }
+
+    // Verificar que el estudiante pertenezca a la carrera del coordinador
+    // Nota: studentId en Application es userId, no student._id
+    const student = await this.studentModel
+      .findOne({ userId: application.studentId })
+      .exec();
+
+    if (!student) {
+      throw new NotFoundException('Estudiante no encontrado');
+    }
+
+    const studentCareerId =
+      student.careerId instanceof Types.ObjectId
+        ? student.careerId.toString()
+        : typeof student.careerId === 'object' &&
+            student.careerId !== null &&
+            '_id' in student.careerId
+          ? (student.careerId as { _id: Types.ObjectId | string })._id
+              instanceof Types.ObjectId
+            ? (student.careerId as { _id: Types.ObjectId })._id.toString()
+            : String((student.careerId as { _id: string })._id)
+          : String(student.careerId);
+
+    if (studentCareerId !== careerId) {
+      throw new ForbiddenException(
+        'No tienes permiso para aceptar esta aplicación. Solo puedes aceptar solicitudes de estudiantes de tu carrera.',
+      );
+    }
+
+    // Solo se pueden aceptar solicitudes que estén en estado "aprobada"
+    if (application.status !== ApplicationStatus.APPROVED) {
+      throw new BadRequestException(
+        'Solo se pueden aceptar solicitudes que estén en estado aprobada',
+      );
+    }
+
+    if (application.status === ApplicationStatus.ACCEPTED) {
+      throw new BadRequestException('Esta aplicación ya está aceptada');
+    }
+
+    if (opportunity.status === OpportunityStatus.CLOSED) {
+      throw new BadRequestException(
+        'No se pueden aceptar más aplicaciones. La oportunidad está cerrada.',
+      );
+    }
+
+    // Verificar que el estudiante no tenga otra solicitud aceptada
+    const otherAcceptedApplication = await this.applicationModel
+      .findOne({
+        studentId: application.studentId,
+        status: ApplicationStatus.ACCEPTED,
+        _id: { $ne: application._id },
+      })
+      .exec();
+
+    if (otherAcceptedApplication) {
+      throw new BadRequestException(
+        'Este estudiante ya tiene una solicitud aceptada. Solo puede tener una solicitud aceptada a la vez.',
+      );
+    }
+
+    const acceptedCount = await this.applicationModel.countDocuments({
+      opportunityId: opportunity._id,
+      status: ApplicationStatus.ACCEPTED,
+    });
+
+    if (acceptedCount >= opportunity.availablePositions) {
+      throw new BadRequestException(
+        `Ya se han aceptado todas las vacantes disponibles (${acceptedCount}/${opportunity.availablePositions}). No se pueden aceptar más aplicaciones.`,
+      );
+    }
+
+    const updatedApplication = await this.applicationModel
+      .findByIdAndUpdate(
+        applicationId,
+        { status: ApplicationStatus.ACCEPTED },
+        {
+          new: true,
+          runValidators: true,
+        },
+      )
+      .populate('studentId', 'name email')
+      .populate('opportunityId')
+      .exec();
+
+    // Rechazar automáticamente todas las demás aplicaciones pendientes y aprobadas del mismo estudiante
+    await this.applicationModel.updateMany(
+      {
+        studentId: application.studentId,
+        status: {
+          $in: [
+            ApplicationStatus.PENDING,
+            ApplicationStatus.APPROVED,
+          ],
+        },
+        _id: { $ne: application._id },
+      },
+      {
+        status: ApplicationStatus.REJECTED,
+        rejectionReason: 'Este estudiante ha sido aceptado en otra solicitud',
+      },
+    );
+
+    const finalAcceptedCount = await this.applicationModel.countDocuments({
+      opportunityId: opportunity._id,
+      status: ApplicationStatus.ACCEPTED,
+    });
+
+    if (finalAcceptedCount >= opportunity.availablePositions) {
+      await this.opportunityModel.findByIdAndUpdate(
+        opportunity._id,
+        {
+          status: OpportunityStatus.CLOSED,
+        },
+        { new: true },
+      );
     }
 
     return updatedApplication;
@@ -1035,6 +1149,134 @@ Responde SOLO con un número decimal entre 1.0 y 5.0 (puede incluir .5), sin tex
     };
   }
 
+  /**
+   * Calcula el matchScore entre un estudiante y una oportunidad usando OpenAI.
+   * Este método SIEMPRE calcula el score en tiempo real, sin usar valores guardados.
+   * Se ejecuta cada vez que se carga la lista de oportunidades disponibles.
+   */
+  private async calculateStudentOpportunityMatch(
+    student: StudentDocument,
+    opportunity: OpportunityDocument,
+  ): Promise<number | null> {
+    try {
+      const apiKey = this.configService.get<string>('openai.apiKey');
+      if (!apiKey) {
+        return null;
+      }
+
+      // Siempre crear una nueva instancia de OpenAI para asegurar evaluación fresca
+      const openai = new OpenAI({ apiKey });
+
+      const studentPopulated = await this.studentModel
+        .findById(student._id)
+        .populate('careerId', 'name code')
+        .lean()
+        .exec();
+
+      if (!studentPopulated) {
+        return null;
+      }
+
+      const opportunityPopulated = await this.opportunityModel
+        .findById(opportunity._id)
+        .populate('careerId', 'name code')
+        .lean()
+        .exec();
+
+      if (!opportunityPopulated) {
+        return null;
+      }
+
+      const studentProfile = {
+        firstName: studentPopulated.firstName,
+        lastName: studentPopulated.lastName,
+        career: (studentPopulated.careerId as any)?.name || 'No especificada',
+        workExperience: studentPopulated.workExperience || [],
+        education: studentPopulated.education || [],
+        skills: studentPopulated.skills || [],
+        professionalProfile: studentPopulated.professionalProfile || {},
+      };
+
+      const opportunityInfo = {
+        title: opportunityPopulated.title,
+        description: opportunityPopulated.description || '',
+        activities: opportunityPopulated.activities || '',
+        career: (opportunityPopulated.careerId as any)?.name || 'No especificada',
+        totalHours: opportunityPopulated.totalHours,
+        modality: opportunityPopulated.modality,
+        workType: opportunityPopulated.workType,
+      };
+
+      const prompt = `Eres un experto en recursos humanos y evaluación de perfiles profesionales.
+
+Evalúa qué tan bien coincide el perfil profesional del estudiante con los requisitos y características de la oportunidad de práctica profesional.
+
+PERFIL DEL ESTUDIANTE:
+- Nombre: ${studentProfile.firstName} ${studentProfile.lastName}
+- Carrera: ${studentProfile.career}
+- Experiencia laboral: ${JSON.stringify(studentProfile.workExperience)}
+- Formación académica: ${JSON.stringify(studentProfile.education)}
+- Habilidades: ${studentProfile.skills.join(', ') || 'No especificadas'}
+- Resumen profesional: ${studentProfile.professionalProfile?.summary || 'No disponible'}
+- Idiomas: ${JSON.stringify(studentProfile.professionalProfile?.languages || [])}
+- Certificaciones: ${JSON.stringify(studentProfile.professionalProfile?.certifications || [])}
+- Proyectos: ${JSON.stringify(studentProfile.professionalProfile?.projects || [])}
+
+OPORTUNIDAD DE PRÁCTICA:
+- Título: ${opportunityInfo.title}
+- Descripción: ${opportunityInfo.description}
+- Actividades requeridas: ${opportunityInfo.activities}
+- Carrera requerida: ${opportunityInfo.career}
+- Horas totales: ${opportunityInfo.totalHours}
+- Modalidad: ${opportunityInfo.modality || 'No especificada'}
+- Tipo de trabajo: ${opportunityInfo.workType || 'No especificado'}
+
+INSTRUCCIONES:
+1. Evalúa el match entre el perfil del estudiante y la oportunidad
+2. Considera: experiencia relevante, habilidades técnicas, formación académica, proyectos, certificaciones, idiomas
+3. Asigna una calificación de 1.0 a 5.0 (puedes usar decimales como 1.5, 2.5, 3.5, 4.5)
+4. 1.0 = Muy bajo match, 3.0 = Match moderado, 5.0 = Match excelente
+5. Sé objetivo y justo en tu evaluación
+
+Responde SOLO con un número decimal entre 1.0 y 5.0 (puede incluir .5), sin texto adicional.`;
+
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Eres un experto en recursos humanos especializado en evaluar la compatibilidad entre perfiles profesionales y oportunidades laborales. Evalúa objetivamente y proporciona solo un número decimal entre 1.0 y 5.0.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 50,
+      });
+
+      const content = response.choices[0]?.message?.content?.trim();
+      if (!content) {
+        return null;
+      }
+
+      const matchScore = parseFloat(content);
+      if (isNaN(matchScore) || matchScore < 1 || matchScore > 5) {
+        return null;
+      }
+
+      return Math.round(matchScore * 2) / 2;
+    } catch (error: any) {
+      console.error(
+        `Error calculando matchScore para oportunidad ${opportunity._id}:`,
+        error.message,
+      );
+      return null;
+    }
+  }
+
   async getAvailableOpportunitiesForStudent(
     userId: string,
     page = 1,
@@ -1043,6 +1285,11 @@ Responde SOLO con un número decimal entre 1.0 y 5.0 (puede incluir .5), sin tex
     careerIdFilter?: string,
   ) {
     const skip = (page - 1) * limit;
+
+    // Obtener el estudiante
+    const student = await this.studentModel
+      .findOne({ userId: new Types.ObjectId(userId) })
+      .exec();
 
     // Obtener IDs de oportunidades a las que el estudiante ya ha aplicado
     const appliedOpportunityIds = await this.applicationModel
@@ -1114,21 +1361,38 @@ Responde SOLO con un número decimal entre 1.0 y 5.0 (puede incluir .5), sin tex
     const savedOpportunityIds = await this.getSavedOpportunityIds(userId);
     const savedIdsSet = new Set(savedOpportunityIds);
 
-    const dataWithShareLinks = data.map((opp) => {
-      const oppObj = opp.toObject();
-      const oppId = oppObj._id.toString();
-      return {
-        ...oppObj,
-        career: oppObj.careerId,
-        company: oppObj.companyId,
-        responsibleUser: oppObj.responsibleUserId,
-        shareLink: opp.shareToken
-          ? `${frontendUrl}/opportunities/${opp.shareToken}`
-          : undefined,
-        isSaved: savedIdsSet.has(oppId),
-        hasApplied: appliedIdsSet.has(oppId),
-      };
-    });
+    // IMPORTANTE: Calcular matchScore en tiempo real para cada oportunidad
+    // Siempre se evalúa desde cero usando OpenAI, sin usar valores guardados
+    // Esto asegura que el matchScore refleje el estado actual del perfil del estudiante
+    const dataWithShareLinks = await Promise.all(
+      data.map(async (opp) => {
+        const oppObj = opp.toObject();
+        const oppId = oppObj._id.toString();
+        
+        // Siempre calcular el matchScore en tiempo real, nunca usar valores guardados
+        let matchScore: number | null = null;
+        if (student) {
+          // Calcular matchScore usando OpenAI cada vez que se carga la lista
+          matchScore = await this.calculateStudentOpportunityMatch(
+            student,
+            opp,
+          );
+        }
+
+        return {
+          ...oppObj,
+          career: oppObj.careerId,
+          company: oppObj.companyId,
+          responsibleUser: oppObj.responsibleUserId,
+          shareLink: opp.shareToken
+            ? `${frontendUrl}/opportunities/${opp.shareToken}`
+            : undefined,
+          isSaved: savedIdsSet.has(oppId),
+          hasApplied: appliedIdsSet.has(oppId),
+          matchScore, // Siempre calculado en tiempo real
+        };
+      }),
+    );
 
     return {
       data: dataWithShareLinks,
@@ -1195,25 +1459,6 @@ Responde SOLO con un número decimal entre 1.0 y 5.0 (puede incluir .5), sin tex
     if (!studentCareerId) {
       throw new BadRequestException(
         'No tienes una carrera asignada. Por favor, completa tu perfil de estudiante.',
-      );
-    }
-
-    // Normalizar careerId de la oportunidad (puede ser ObjectId o objeto populado)
-    const opportunityCareerIdRaw = opportunity.careerId;
-    const opportunityCareerId =
-      typeof opportunityCareerIdRaw === 'object' &&
-      opportunityCareerIdRaw !== null
-        ? '_id' in opportunityCareerIdRaw && opportunityCareerIdRaw._id
-          ? opportunityCareerIdRaw._id
-          : opportunityCareerIdRaw
-        : opportunityCareerIdRaw;
-
-    // Verificar que la carrera del estudiante coincida con la de la oportunidad
-    const studentCareerIdStr = studentCareerId.toString();
-    const opportunityCareerIdStr = opportunityCareerId.toString();
-    if (studentCareerIdStr !== opportunityCareerIdStr) {
-      throw new BadRequestException(
-        'Esta oportunidad no está disponible para tu carrera',
       );
     }
 
@@ -1600,6 +1845,307 @@ Responde SOLO con un número decimal entre 1.0 y 5.0 (puede incluir .5), sin tex
               ? `${frontendUrl}/opportunities/${oppTyped.shareToken}`
               : undefined,
         },
+      };
+    });
+
+    return {
+      data: dataWithDetails,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async getCoordinatorApplications(
+    careerId: string,
+    page = 1,
+    limit = 20,
+    opportunityId?: string,
+    search?: string,
+  ) {
+    const skip = (page - 1) * limit;
+    const careerObjectId = new Types.ObjectId(careerId);
+
+    // Primero obtener los estudiantes de la carrera del coordinador
+    // Necesitamos obtener los userId de los estudiantes porque en Application,
+    // studentId hace referencia a User, no a Student
+    const studentsOfCareer = await this.studentModel
+      .find({ careerId: careerObjectId })
+      .select('_id userId')
+      .lean()
+      .exec();
+
+    const userIds = studentsOfCareer
+      .map((student) => {
+        const userIdValue = student.userId;
+        if (userIdValue instanceof Types.ObjectId) {
+          return userIdValue;
+        }
+        if (typeof userIdValue === 'string') {
+          return new Types.ObjectId(userIdValue);
+        }
+        if (
+          userIdValue &&
+          typeof userIdValue === 'object' &&
+          '_id' in userIdValue
+        ) {
+          const idValue = (userIdValue as { _id: Types.ObjectId | string })
+            ._id;
+          return typeof idValue === 'string'
+            ? new Types.ObjectId(idValue)
+            : idValue;
+        }
+        return null;
+      })
+      .filter((id): id is Types.ObjectId => id !== null);
+
+    if (userIds.length === 0) {
+      return {
+        data: [],
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+      };
+    }
+
+    // Construir query para aplicaciones: debe ser de estudiantes de la carrera
+    // Si se proporciona opportunityId, filtrar por esa oportunidad específica
+    // Si no, mostrar todas las solicitudes de los estudiantes sin importar la carrera de la oportunidad
+    // Nota: studentId en Application es userId, no student._id
+    const applicationQuery: {
+      studentId: { $in: Types.ObjectId[] };
+      opportunityId?: Types.ObjectId | { $in: Types.ObjectId[] };
+    } = {
+      studentId: { $in: userIds },
+    };
+
+    // Si se proporciona un opportunityId específico, filtrar por esa oportunidad
+    if (opportunityId) {
+      applicationQuery.opportunityId = new Types.ObjectId(opportunityId);
+    }
+
+    // Obtener todas las aplicaciones (sin paginación inicial para poder filtrar por nombre)
+    const allApplications = await this.applicationModel
+      .find(applicationQuery)
+      .populate('studentId', 'name email')
+      .populate({
+        path: 'opportunityId',
+        select: 'title',
+        populate: [
+          { path: 'careerId', select: 'name code' },
+          { path: 'companyId', select: 'name logo' },
+        ],
+      })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+
+    // Filtrar por nombre de estudiante si se proporciona búsqueda
+    let filteredApplications = allApplications;
+    if (search) {
+      const searchLower = search.toLowerCase();
+      filteredApplications = allApplications.filter((app) => {
+        const studentIdValue = app.studentId;
+        if (!studentIdValue) return false;
+
+        // Verificar si el estudiante está poblado
+        if (
+          typeof studentIdValue === 'object' &&
+          'name' in studentIdValue &&
+          typeof (studentIdValue as { name: unknown }).name === 'string'
+        ) {
+          const studentName = (
+            studentIdValue as { name: string }
+          ).name.toLowerCase();
+          return studentName.includes(searchLower);
+        }
+
+        return false;
+      });
+    }
+
+    // Ordenar: primero las aprobadas, luego por matchScore (mejores primero), luego por fecha de creación
+    const sortedApplications = filteredApplications.sort((a, b) => {
+      const aStatus = (a as any).status;
+      const bStatus = (b as any).status;
+      
+      // Prioridad 1: Las aprobadas van primero
+      const aIsApproved = aStatus === ApplicationStatus.APPROVED;
+      const bIsApproved = bStatus === ApplicationStatus.APPROVED;
+      
+      if (aIsApproved && !bIsApproved) {
+        return -1;
+      }
+      if (!aIsApproved && bIsApproved) {
+        return 1;
+      }
+      
+      // Si ambas tienen el mismo estado (ambas aprobadas o ambas no aprobadas),
+      // ordenar por matchScore (mejores primero)
+      const aScore = (a as any).matchScore ?? -1;
+      const bScore = (b as any).matchScore ?? -1;
+      
+      // Si ambos tienen calificación, ordenar por calificación descendente
+      if (aScore >= 0 && bScore >= 0) {
+        return bScore - aScore;
+      }
+      
+      // Si solo uno tiene calificación, el que tiene calificación va primero
+      if (aScore >= 0 && bScore < 0) {
+        return -1;
+      }
+      if (aScore < 0 && bScore >= 0) {
+        return 1;
+      }
+      
+      // Si ninguno tiene calificación, ordenar por fecha de creación descendente
+      const aDate = (a as any).createdAt
+        ? new Date((a as any).createdAt).getTime()
+        : 0;
+      const bDate = (b as any).createdAt
+        ? new Date((b as any).createdAt).getTime()
+        : 0;
+      return bDate - aDate;
+    });
+
+    // Aplicar paginación después del filtro y ordenamiento
+    const total = sortedApplications.length;
+    const paginatedApplications = sortedApplications.slice(skip, skip + limit);
+
+    // Transformar aplicaciones al formato esperado
+    const dataWithDetails = paginatedApplications.map((app) => {
+      const appObj = app as Record<string, unknown>;
+      const studentIdValue = appObj.studentId;
+      let studentInfo: { _id: string; name: string; email: string } | undefined;
+      let studentIdString = '';
+
+      if (studentIdValue) {
+        if (
+          typeof studentIdValue === 'object' &&
+          'name' in studentIdValue &&
+          'email' in studentIdValue
+        ) {
+          const studentObj = studentIdValue as unknown as {
+            _id: Types.ObjectId | string;
+            name: string;
+            email: string;
+          };
+          studentIdString =
+            typeof studentObj._id === 'string'
+              ? studentObj._id
+              : studentObj._id.toString();
+          studentInfo = {
+            _id: studentIdString,
+            name: studentObj.name || '',
+            email: studentObj.email || '',
+          };
+        } else {
+          if (typeof studentIdValue === 'string') {
+            studentIdString = studentIdValue;
+          } else if (studentIdValue instanceof Types.ObjectId) {
+            studentIdString = studentIdValue.toString();
+          } else if (
+            studentIdValue &&
+            typeof studentIdValue === 'object' &&
+            '_id' in studentIdValue
+          ) {
+            const idValue = (studentIdValue as { _id: Types.ObjectId | string })
+              ._id;
+            studentIdString =
+              typeof idValue === 'string' ? idValue : idValue.toString();
+          } else {
+            studentIdString = String(studentIdValue);
+          }
+        }
+      }
+
+      const opportunityIdValue = appObj.opportunityId;
+      let opportunityInfo: {
+        _id: string;
+        title: string;
+        career?: { _id: string; name: string; code: string };
+        company?: { _id: string; name: string; logo?: string };
+      } | null = null;
+
+      if (opportunityIdValue) {
+        if (
+          typeof opportunityIdValue === 'object' &&
+          'title' in opportunityIdValue
+        ) {
+          const oppObj = opportunityIdValue as unknown as {
+            _id: Types.ObjectId | string;
+            title: string;
+            careerId?: { _id: Types.ObjectId | string; name: string; code: string };
+            companyId?: { _id: Types.ObjectId | string; name: string; logo?: string };
+          };
+          const oppIdString =
+            typeof oppObj._id === 'string'
+              ? oppObj._id
+              : oppObj._id.toString();
+          opportunityInfo = {
+            _id: oppIdString,
+            title: oppObj.title || '',
+            career: oppObj.careerId
+              ? {
+                  _id:
+                    typeof oppObj.careerId._id === 'string'
+                      ? oppObj.careerId._id
+                      : oppObj.careerId._id.toString(),
+                  name: oppObj.careerId.name || '',
+                  code: oppObj.careerId.code || '',
+                }
+              : undefined,
+            company: oppObj.companyId
+              ? {
+                  _id:
+                    typeof oppObj.companyId._id === 'string'
+                      ? oppObj.companyId._id
+                      : oppObj.companyId._id.toString(),
+                  name: oppObj.companyId.name || '',
+                  logo: oppObj.companyId.logo || undefined,
+                }
+              : undefined,
+          };
+        }
+      }
+
+      const createdAt =
+        appObj.createdAt && typeof appObj.createdAt === 'string'
+          ? appObj.createdAt
+          : appObj.createdAt && appObj.createdAt instanceof Date
+            ? appObj.createdAt.toISOString()
+            : (appObj.createdAt as any)?.toString
+              ? new Date((appObj.createdAt as any).toString()).toISOString()
+              : new Date().toISOString();
+
+      const updatedAt =
+        appObj.updatedAt && typeof appObj.updatedAt === 'string'
+          ? appObj.updatedAt
+          : appObj.updatedAt && appObj.updatedAt instanceof Date
+            ? appObj.updatedAt.toISOString()
+            : (appObj.updatedAt as any)?.toString
+              ? new Date((appObj.updatedAt as any).toString()).toISOString()
+              : new Date().toISOString();
+
+      const matchScoreValue =
+        appObj.matchScore !== undefined && appObj.matchScore !== null
+          ? (appObj.matchScore as number)
+          : undefined;
+
+      return {
+        _id: (appObj._id as Types.ObjectId).toString(),
+        opportunityId: opportunityInfo?._id || '',
+        studentId: studentIdString || '',
+        student: studentInfo,
+        opportunity: opportunityInfo,
+        coverLetter: (appObj.coverLetter as string) || '',
+        status: appObj.status as ApplicationStatus,
+        rejectionReason: (appObj.rejectionReason as string) || undefined,
+        matchScore: matchScoreValue,
+        createdAt,
+        updatedAt,
       };
     });
 

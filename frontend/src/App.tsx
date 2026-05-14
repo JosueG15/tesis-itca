@@ -1,9 +1,11 @@
-import { Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Suspense, lazy, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { RequireCompany } from '@/components/auth/RequireCompany';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { UserRole } from '@/types/auth.types';
+import { useAuth } from '@/hooks/useAuth';
+import { useHasActivePractice } from '@/hooks/useHasActivePractice';
 
 const LoginPage = lazy(() => import('@/pages/LoginPage').then((module) => ({ default: module.LoginPage })));
 const DashboardPage = lazy(() => import('@/pages/DashboardPage').then((module) => ({ default: module.DashboardPage })));
@@ -17,6 +19,7 @@ const CompaniesPage = lazy(() => import('@/pages/CompaniesPage').then((module) =
 const CareerCategoriesPage = lazy(() => import('@/pages/CareerCategoriesPage').then((module) => ({ default: module.CareerCategoriesPage })));
 const CareersPage = lazy(() => import('@/pages/CareersPage').then((module) => ({ default: module.CareersPage })));
 const UsersPage = lazy(() => import('@/pages/UsersPage').then((module) => ({ default: module.UsersPage })));
+const ReportsPage = lazy(() => import('@/pages/ReportsPage').then((module) => ({ default: module.ReportsPage })));
 const AcceptInvitationPage = lazy(() => import('@/pages/AcceptInvitationPage').then((module) => ({ default: module.AcceptInvitationPage })));
 const StudentOpportunitiesPage = lazy(() => import('@/pages/StudentOpportunitiesPage').then((module) => ({ default: module.StudentOpportunitiesPage })));
 const MyApplicationsPage = lazy(() => import('@/pages/MyApplicationsPage').then((module) => ({ default: module.MyApplicationsPage })));
@@ -24,6 +27,7 @@ const MyPracticeProfessionalPage = lazy(() => import('@/pages/MyPracticeProfessi
 const PracticeHistoryPage = lazy(() => import('@/pages/PracticeHistoryPage').then((module) => ({ default: module.PracticeHistoryPage })));
 const PracticeDetailPage = lazy(() => import('@/pages/PracticeDetailPage').then((module) => ({ default: module.PracticeDetailPage })));
 const CompanyApplicationsPage = lazy(() => import('@/pages/CompanyApplicationsPage').then((module) => ({ default: module.CompanyApplicationsPage })));
+const CoordinatorApplicationsPage = lazy(() => import('@/pages/CoordinatorApplicationsPage').then((module) => ({ default: module.CoordinatorApplicationsPage })));
 const ApplicationDetailPage = lazy(() => import('@/pages/ApplicationDetailPage').then((module) => ({ default: module.ApplicationDetailPage })));
 const AdminOpportunitiesPage = lazy(() => import('@/pages/AdminOpportunitiesPage').then((module) => ({ default: module.AdminOpportunitiesPage })));
 const AdminOpportunityDetailPage = lazy(() => import('@/pages/AdminOpportunityDetailPage').then((module) => ({ default: module.AdminOpportunityDetailPage })));
@@ -39,6 +43,27 @@ function LoadingFallback() {
       </div>
     </div>
   );
+}
+
+function StudentDashboardRedirect({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const hasActivePractice = useHasActivePractice();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (
+      user?.role === UserRole.ESTUDIANTE &&
+      hasActivePractice
+    ) {
+      navigate('/mi-practica-profesional', { replace: true });
+    }
+  }, [user?.role, hasActivePractice, navigate]);
+
+  if (user?.role === UserRole.ESTUDIANTE && hasActivePractice) {
+    return null;
+  }
+
+  return <>{children}</>;
 }
 
 function App() {
@@ -65,12 +90,14 @@ function App() {
           <Route
             path="/dashboard"
             element={
-              <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.COMPANY, UserRole.ESTUDIANTE]}>
-                <MainLayout>
-                  <Suspense fallback={<LoadingFallback />}>
-                    <DashboardPage />
-                  </Suspense>
-                </MainLayout>
+              <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.COMPANY, UserRole.ESTUDIANTE, UserRole.COORDINADOR]}>
+                <StudentDashboardRedirect>
+                  <MainLayout>
+                    <Suspense fallback={<LoadingFallback />}>
+                      <DashboardPage />
+                    </Suspense>
+                  </MainLayout>
+                </StudentDashboardRedirect>
               </ProtectedRoute>
             }
           />
@@ -98,6 +125,18 @@ function App() {
                       <CompanyApplicationsPage />
                     </Suspense>
                   </RequireCompany>
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/solicitudes-coordinador"
+            element={
+              <ProtectedRoute allowedRoles={[UserRole.COORDINADOR]}>
+                <MainLayout>
+                  <Suspense fallback={<LoadingFallback />}>
+                    <CoordinatorApplicationsPage />
+                  </Suspense>
                 </MainLayout>
               </ProtectedRoute>
             }
@@ -133,13 +172,11 @@ function App() {
           <Route
             path="/estudiantes"
             element={
-              <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.COMPANY]}>
+              <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.COMPANY, UserRole.COORDINADOR]}>
                 <MainLayout>
-                  <RequireCompany>
-                    <Suspense fallback={<LoadingFallback />}>
-                      <StudentsPage />
-                    </Suspense>
-                  </RequireCompany>
+                  <Suspense fallback={<LoadingFallback />}>
+                    <StudentsPage />
+                  </Suspense>
                 </MainLayout>
               </ProtectedRoute>
             }
@@ -219,6 +256,18 @@ function App() {
             }
           />
           <Route
+            path="/reports"
+            element={
+              <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
+                <MainLayout>
+                  <Suspense fallback={<LoadingFallback />}>
+                    <ReportsPage />
+                  </Suspense>
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/oportunidades-disponibles"
             element={
               <ProtectedRoute allowedRoles={[UserRole.ESTUDIANTE]}>
@@ -281,7 +330,7 @@ function App() {
           <Route
             path="/settings"
             element={
-              <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.COMPANY, UserRole.ESTUDIANTE]}>
+              <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.COMPANY, UserRole.ESTUDIANTE, UserRole.COORDINADOR]}>
                 <MainLayout>
                   <Suspense fallback={<LoadingFallback />}>
                     <SettingsPage />
@@ -297,7 +346,7 @@ function App() {
           <Route
             path="/admin/opportunities"
             element={
-              <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
+              <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.COORDINADOR]}>
                 <MainLayout>
                   <Suspense fallback={<LoadingFallback />}>
                     <AdminOpportunitiesPage />
@@ -309,7 +358,7 @@ function App() {
           <Route
             path="/admin/opportunities/:id"
             element={
-              <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
+              <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.COORDINADOR]}>
                 <MainLayout>
                   <Suspense fallback={<LoadingFallback />}>
                     <AdminOpportunityDetailPage />

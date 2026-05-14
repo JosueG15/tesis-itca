@@ -12,7 +12,7 @@ import { ApplicationsEmptyState } from '@/components/opportunities/ApplicationsE
 import { ApplicationsContent } from '@/components/opportunities/ApplicationsContent';
 
 const isApplicationTab = (tab: ApplicationTabType): boolean => {
-  return tab === 'applied' || tab === 'accepted' || tab === 'rejected';
+  return tab === 'applied' || tab === 'approved' || tab === 'accepted' || tab === 'rejected';
 };
 
 export function MyApplicationsPage() {
@@ -60,6 +60,11 @@ export function MyApplicationsPage() {
     if (activeTab === 'applied') {
       return allApplications.filter(
         (app) => app.status === ApplicationStatusValues.PENDING,
+      );
+    }
+    if (activeTab === 'approved') {
+      return allApplications.filter(
+        (app) => app.status === ApplicationStatusValues.APPROVED,
       );
     }
     if (activeTab === 'accepted') {

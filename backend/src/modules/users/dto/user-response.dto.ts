@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '@/modules/auth/schemas/user.schema';
 
 export class UserResponseDto {
@@ -26,6 +26,12 @@ export class UserResponseDto {
     example: UserRole.ADMIN,
   })
   role: UserRole;
+
+  @ApiPropertyOptional({
+    description: 'ID de la carrera (solo para coordinadores)',
+    example: '507f1f77bcf86cd799439011',
+  })
+  careerId?: string;
 
   @ApiProperty({
     description: 'Estado activo/inactivo',

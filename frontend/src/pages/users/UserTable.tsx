@@ -1,5 +1,8 @@
 import { User, Mail, CheckSquare, Square } from 'lucide-react';
 import { formatDate } from '@/utils/date.utils';
+import { Badge } from '@/components/ui/badge';
+import { getRoleLabel } from '@/utils/role.utils';
+import { UserRole } from '@/types/auth.types';
 import {
   TableSortButton,
   TableCheckboxCell,
@@ -19,6 +22,7 @@ export function UserTable({
   onDelete,
   onView,
   onStatusChange,
+  onGeneratePassword,
   getStatusBadge,
   selectionState,
 }: UserTableProps) {
@@ -53,6 +57,9 @@ export function UserTable({
                     currentOrder={sort.order}
                     onSort={onSort}
                   />
+                </th>
+                <th className="text-left py-2 sm:py-3 md:py-4 px-1.5 sm:px-2 md:px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap min-w-[100px] sm:min-w-[120px]">
+                  Rol
                 </th>
                 <th className="text-left py-2 sm:py-3 md:py-4 px-1.5 sm:px-2 md:px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap min-w-[80px] sm:min-w-[90px]">
                   Estado
@@ -113,6 +120,20 @@ export function UserTable({
                       </p>
                     </div>
                   </td>
+                  <td className="py-2 sm:py-3 md:py-4 px-1.5 sm:px-2 md:px-4 whitespace-nowrap min-w-[100px] sm:min-w-[120px]">
+                    <Badge
+                      variant={
+                        userItem.role === UserRole.ADMIN
+                          ? 'default'
+                          : userItem.role === UserRole.COORDINADOR
+                            ? 'secondary'
+                            : 'outline'
+                      }
+                      className="text-xs"
+                    >
+                      {getRoleLabel(userItem.role)}
+                    </Badge>
+                  </td>
                   <td className="py-2 sm:py-3 md:py-4 px-1.5 sm:px-2 md:px-4 whitespace-nowrap min-w-[80px] sm:min-w-[90px]">
                     {getStatusBadge(userItem.isActive)}
                   </td>
@@ -134,6 +155,9 @@ export function UserTable({
                       onEdit: onEdit ? () => onEdit(userItem) : undefined,
                       onToggleStatus: onStatusChange
                         ? () => onStatusChange(userItem)
+                        : undefined,
+                      onGeneratePassword: onGeneratePassword
+                        ? () => onGeneratePassword(userItem)
                         : undefined,
                       onDelete: onDelete ? () => onDelete(userItem) : undefined,
                     }}
@@ -180,6 +204,20 @@ export function UserTable({
                       {userItem.email}
                     </p>
                   </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge
+                      variant={
+                        userItem.role === UserRole.ADMIN
+                          ? 'default'
+                          : userItem.role === UserRole.COORDINADOR
+                            ? 'secondary'
+                            : 'outline'
+                      }
+                      className="text-xs"
+                    >
+                      {getRoleLabel(userItem.role)}
+                    </Badge>
+                  </div>
                   <div className="flex items-center gap-2">
                     {getStatusBadge(userItem.isActive)}
                   </div>
@@ -192,6 +230,9 @@ export function UserTable({
                   onEdit: onEdit ? () => onEdit(userItem) : undefined,
                   onToggleStatus: onStatusChange
                     ? () => onStatusChange(userItem)
+                    : undefined,
+                  onGeneratePassword: onGeneratePassword
+                    ? () => onGeneratePassword(userItem)
                     : undefined,
                   onDelete: onDelete ? () => onDelete(userItem) : undefined,
                 }}

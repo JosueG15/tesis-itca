@@ -4,7 +4,9 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { ConfigService } from '@nestjs/config';
 import { Model, Types } from 'mongoose';
+import OpenAI from 'openai';
 import {
   PracticeActivity,
   PracticeActivityDocument,
@@ -35,6 +37,7 @@ import {
   PracticeStatus,
 } from './dto/practice-history-item.dto';
 import { StudentsService } from '@/modules/students/students.service';
+import { HolidaysService } from './holidays.service';
 
 @Injectable()
 export class PracticeProfessionalService {
@@ -50,6 +53,8 @@ export class PracticeProfessionalService {
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
     private studentsService: StudentsService,
+    private configService: ConfigService,
+    private holidaysService: HolidaysService,
   ) {}
 
   private async getCompanyIdByUserId(userId: string): Promise<string> {
@@ -304,20 +309,99 @@ export class PracticeProfessionalService {
       );
     }
 
-    const activityDate = new Date(createActivityDto.activityDate);
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
+    const activityDateStr = createActivityDto.activityDate.split('T')[0];
+    const [year, month, day] = activityDateStr.split('-').map(Number);
+    const activityDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
 
-    if (activityDate > today) {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const [todayYear, todayMonth, todayDay] = todayStr.split('-').map(Number);
+    const todayDate = new Date(
+      Date.UTC(todayYear, todayMonth - 1, todayDay, 23, 59, 59, 999),
+    );
+
+    if (activityDate > todayDate) {
       throw new BadRequestException(
         'La fecha de la actividad no puede ser futura',
+      );
+    }
+
+    const isHoliday = await this.holidaysService.isHoliday(activityDateStr);
+    if (isHoliday) {
+      throw new BadRequestException(
+        'No se pueden registrar actividades en días festivos',
+      );
+    }
+
+    const existingActivities = await this.practiceActivityModel
+      .find({
+        applicationId: acceptedApplication._id,
+        status: {
+          $in: [ActivityStatus.APPROVED, ActivityStatus.PENDING_APPROVAL],
+        },
+      })
+      .lean()
+      .exec();
+
+    const activitiesOnSameDate = existingActivities.filter((activity) => {
+      const actDate = new Date(activity.activityDate);
+      const actDateStr = actDate.toISOString().split('T')[0];
+      return actDateStr === activityDateStr;
+    });
+
+    const dailyHours = activitiesOnSameDate.reduce(
+      (sum, activity) => sum + (activity.hours || 0),
+      0,
+    );
+
+    if (dailyHours + createActivityDto.hours > 8) {
+      throw new BadRequestException(
+        `No puedes registrar más de 8 horas por día. Ya tienes ${dailyHours} horas registradas en esta fecha.`,
+      );
+    }
+
+    const weekStartDate = new Date(activityDate);
+    const dayOfWeek = weekStartDate.getUTCDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const mondayYear = weekStartDate.getUTCFullYear();
+    const mondayMonth = weekStartDate.getUTCMonth();
+    const mondayDay = weekStartDate.getUTCDate() - daysToMonday;
+    const weekStart = new Date(
+      Date.UTC(mondayYear, mondayMonth, mondayDay, 0, 0, 0, 0),
+    );
+
+    const weekEndYear = weekStart.getUTCFullYear();
+    const weekEndMonth = weekStart.getUTCMonth();
+    const weekEndDay = weekStart.getUTCDate() + 6;
+    const weekEnd = new Date(
+      Date.UTC(weekEndYear, weekEndMonth, weekEndDay, 23, 59, 59, 999),
+    );
+
+    const activitiesInSameWeek = existingActivities.filter((activity) => {
+      const actDate = new Date(activity.activityDate);
+      const actDateStr = actDate.toISOString().split('T')[0];
+      const [actYear, actMonth, actDay] = actDateStr.split('-').map(Number);
+      const actDateNormalized = new Date(
+        Date.UTC(actYear, actMonth - 1, actDay, 12, 0, 0, 0),
+      );
+      return actDateNormalized >= weekStart && actDateNormalized <= weekEnd;
+    });
+
+    const weeklyHours = activitiesInSameWeek.reduce(
+      (sum, activity) => sum + (activity.hours || 0),
+      0,
+    );
+
+    if (weeklyHours + createActivityDto.hours > 40) {
+      throw new BadRequestException(
+        `No puedes registrar más de 40 horas por semana. Ya tienes ${weeklyHours} horas registradas esta semana.`,
       );
     }
 
     const activity = new this.practiceActivityModel({
       applicationId: acceptedApplication._id,
       description: createActivityDto.description,
-      activityDate,
+      activityDate: new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0)),
       hours: createActivityDto.hours,
       equipmentOrTool: createActivityDto.equipmentOrTool,
       status: ActivityStatus.PENDING_APPROVAL,
@@ -508,6 +592,20 @@ export class PracticeProfessionalService {
 
     const skip = (page - 1) * limit;
 
+    // Get opportunity details for evaluation
+    const opportunityId =
+      acceptedApplication.opportunityId instanceof Types.ObjectId
+        ? acceptedApplication.opportunityId
+        : new Types.ObjectId(
+            String((acceptedApplication.opportunityId as unknown as { _id?: Types.ObjectId })._id || acceptedApplication.opportunityId),
+          );
+
+    const opportunityFull = await this.opportunityModel
+      .findById(opportunityId)
+      .select('title description activities')
+      .lean()
+      .exec();
+
     const [activities, total] = await Promise.all([
       this.practiceActivityModel
         .find({
@@ -525,33 +623,49 @@ export class PracticeProfessionalService {
         .exec(),
     ]);
 
-    const data = activities.map((activity) => {
-      const activityObj = activity as unknown as {
-        _id: Types.ObjectId;
-        applicationId: Types.ObjectId;
-        description: string;
-        activityDate: Date;
-        hours: number;
-        equipmentOrTool: string;
-        status: ActivityStatus;
-        rejectionReason?: string;
-        createdAt: Date;
-        updatedAt: Date;
-      };
+    // Evaluate activities that are pending approval
+    const data = await Promise.all(
+      activities.map(async (activity) => {
+        const activityObj = activity as unknown as {
+          _id: Types.ObjectId;
+          applicationId: Types.ObjectId;
+          description: string;
+          activityDate: Date;
+          hours: number;
+          equipmentOrTool: string;
+          status: ActivityStatus;
+          rejectionReason?: string;
+          createdAt: Date;
+          updatedAt: Date;
+        };
 
-      return {
-        _id: activityObj._id.toString(),
-        applicationId: activityObj.applicationId.toString(),
-        description: activityObj.description,
-        activityDate: activityObj.activityDate,
-        hours: activityObj.hours,
-        equipmentOrTool: activityObj.equipmentOrTool,
-        status: activityObj.status,
-        rejectionReason: activityObj.rejectionReason,
-        createdAt: activityObj.createdAt,
-        updatedAt: activityObj.updatedAt,
-      };
-    });
+        let evaluation: { type: 'warning' | 'approval'; message: string } | undefined;
+
+        // Only evaluate if activity is pending approval
+        if (activityObj.status === ActivityStatus.PENDING_APPROVAL && opportunityFull) {
+          evaluation = await this.evaluateActivityRelevance(
+            activityObj.description,
+            opportunityFull.title || '',
+            opportunityFull.description || '',
+            opportunityFull.activities || '',
+          );
+        }
+
+        return {
+          _id: activityObj._id.toString(),
+          applicationId: activityObj.applicationId.toString(),
+          description: activityObj.description,
+          activityDate: activityObj.activityDate,
+          hours: activityObj.hours,
+          equipmentOrTool: activityObj.equipmentOrTool,
+          status: activityObj.status,
+          rejectionReason: activityObj.rejectionReason,
+          evaluation,
+          createdAt: activityObj.createdAt,
+          updatedAt: activityObj.updatedAt,
+        };
+      }),
+    );
 
     return {
       data,
@@ -560,6 +674,119 @@ export class PracticeProfessionalService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  private async evaluateActivityRelevance(
+    activityDescription: string,
+    opportunityTitle: string,
+    opportunityDescription: string,
+    opportunityActivities: string,
+  ): Promise<{ type: 'warning' | 'approval'; message: string }> {
+    const apiKey = this.configService.get<string>('openai.apiKey');
+    if (!apiKey) {
+      return {
+        type: 'approval',
+        message: 'La actividad reportada está alineada con los objetivos y requerimientos de la oportunidad de práctica profesional.',
+      };
+    }
+
+    const openai = new OpenAI({ apiKey });
+
+    const prompt = `Eres un experto en evaluación de actividades de práctica profesional.
+
+Evalúa si la actividad reportada por el estudiante está relacionada con la oportunidad de práctica profesional a la cual pertenece.
+
+ACTIVIDAD REPORTADA POR EL ESTUDIANTE:
+${activityDescription}
+
+OPORTUNIDAD DE PRÁCTICA PROFESIONAL:
+- Título: ${opportunityTitle}
+- Descripción: ${opportunityDescription || 'No especificada'}
+- Actividades requeridas: ${opportunityActivities || 'No especificadas'}
+
+INSTRUCCIONES:
+1. Evalúa si la actividad reportada tiene relación con la oportunidad de práctica profesional
+2. Considera si la actividad es relevante para el tipo de trabajo, las actividades requeridas y la descripción de la oportunidad
+3. Responde con uno de estos dos tipos:
+   - Si la actividad NO tiene relación o tiene muy poca relación: responde con tipo "warning" y mensaje "La actividad reportada no guarda relación con los objetivos y actividades definidas en la oportunidad de práctica profesional."
+   - Si la actividad SÍ tiene relación y hace sentido: responde con tipo "approval" y mensaje "La actividad reportada está alineada con los objetivos y requerimientos de la oportunidad de práctica profesional."
+
+Responde SOLO con un JSON válido en este formato exacto:
+{
+  "type": "warning" o "approval",
+  "message": "el mensaje correspondiente"
+}
+
+No incluyas ningún texto adicional, solo el JSON.`;
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Eres un experto en evaluación de actividades de práctica profesional. Evalúa objetivamente si las actividades reportadas están relacionadas con las oportunidades de práctica. Responde solo con JSON válido.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 200,
+      });
+
+      const content = response.choices[0]?.message?.content?.trim();
+      if (!content) {
+        return {
+          type: 'approval',
+          message: 'La actividad reportada está alineada con los objetivos y requerimientos de la oportunidad de práctica profesional.',
+        };
+      }
+
+      // Intentar parsear el JSON
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const evaluation = JSON.parse(jsonMatch[0]);
+        if (
+          evaluation.type === 'warning' ||
+          evaluation.type === 'approval'
+        ) {
+          return {
+            type: evaluation.type,
+            message:
+              evaluation.message ||
+              (evaluation.type === 'warning'
+                ? 'La actividad reportada no guarda relación con los objetivos y actividades definidas en la oportunidad de práctica profesional.'
+                : 'La actividad reportada está alineada con los objetivos y requerimientos de la oportunidad de práctica profesional.'),
+          };
+        }
+      }
+
+      // Si no se pudo parsear correctamente, hacer una evaluación simple basada en palabras clave
+      const activityLower = activityDescription.toLowerCase();
+      const opportunityText = `${opportunityTitle} ${opportunityDescription} ${opportunityActivities}`.toLowerCase();
+      
+      // Buscar palabras clave comunes
+      const commonWords = activityLower
+        .split(/\s+/)
+        .filter((word) => word.length > 3)
+        .some((word) => opportunityText.includes(word));
+
+      return {
+        type: commonWords ? 'approval' : 'warning',
+        message: commonWords
+          ? 'La actividad reportada está alineada con los objetivos y requerimientos de la oportunidad de práctica profesional.'
+          : 'La actividad reportada no guarda relación con los objetivos y actividades definidas en la oportunidad de práctica profesional.',
+      };
+    } catch (error) {
+      console.error('Error evaluando actividad con OpenAI:', error);
+      return {
+        type: 'approval',
+        message: 'La actividad reportada está alineada con los objetivos y requerimientos de la oportunidad de práctica profesional.',
+      };
+    }
   }
 
   async updateActivityStatus(
@@ -639,6 +866,8 @@ export class PracticeProfessionalService {
         'La razón de rechazo es requerida cuando se rechaza una actividad',
       );
     }
+
+    // No evaluar aquí, la evaluación ya se hizo cuando se cargaron las actividades
 
     // Update activity status
     activity.status = updateDto.status;
@@ -762,16 +991,42 @@ export class PracticeProfessionalService {
     // Get student using StudentsService (it handles both _id and userId)
     const transformedStudent = await this.studentsService.findOne(studentId);
 
+    // Get all approved activities to calculate approved hours
+    const approvedActivities = await this.practiceActivityModel
+      .find({
+        applicationId: acceptedApplication._id,
+        status: ActivityStatus.APPROVED,
+      })
+      .select('hours')
+      .lean()
+      .exec();
+
+    const approvedHours = approvedActivities.reduce(
+      (sum, activity) => sum + (activity.hours || 0),
+      0,
+    );
+
     return {
       student: transformedStudent,
       application: acceptedApplication,
       opportunity: acceptedApplication.opportunityId,
+      approvedHours,
     };
   }
 
   async finishPracticeProfessional(
     studentId: string,
     companyUserId: string,
+    finishDto: {
+      earlyTerminationReason?: string;
+      evaluation: {
+        qualityAndOrganization: number;
+        knowledgeAndApplication: number;
+        learningCapacity: number;
+        attendanceAndPunctuality: number;
+        initiativeAndJudgment: number;
+      };
+    },
   ): Promise<{ message: string }> {
     let studentUserId: Types.ObjectId | null = null;
 
@@ -824,6 +1079,7 @@ export class PracticeProfessionalService {
 
     const opportunity = application.opportunityId as unknown as {
       companyId: Types.ObjectId | string | { _id: Types.ObjectId | string };
+      totalHours?: number;
     };
 
     let opportunityCompanyId: string;
@@ -854,6 +1110,63 @@ export class PracticeProfessionalService {
         'No tienes permiso para finalizar la práctica profesional de este estudiante',
       );
     }
+
+    // Get opportunity with totalHours
+    const opportunityId =
+      application.opportunityId instanceof Types.ObjectId
+        ? application.opportunityId
+        : new Types.ObjectId(
+            String((application.opportunityId as unknown as { _id?: Types.ObjectId })._id || application.opportunityId),
+          );
+
+    const opportunityFull = await this.opportunityModel
+      .findById(opportunityId)
+      .select('totalHours')
+      .lean()
+      .exec();
+
+    if (!opportunityFull) {
+      throw new NotFoundException('Oportunidad no encontrada');
+    }
+
+    // Get approved activities to calculate total approved hours
+    const approvedActivities = await this.practiceActivityModel
+      .find({
+        applicationId: application._id,
+        status: ActivityStatus.APPROVED,
+      })
+      .select('hours')
+      .lean()
+      .exec();
+
+    const approvedHours = approvedActivities.reduce(
+      (sum, activity) => sum + (activity.hours || 0),
+      0,
+    );
+
+    const requiredHours = opportunityFull.totalHours || 0;
+
+    // If approved hours are less than required hours, early termination reason is required
+    if (approvedHours < requiredHours) {
+      if (
+        !finishDto.earlyTerminationReason ||
+        finishDto.earlyTerminationReason.trim() === ''
+      ) {
+        throw new BadRequestException(
+          'Debes proporcionar un motivo para finalizar la práctica profesional antes de completar las horas requeridas.',
+        );
+      }
+      application.earlyTerminationReason = finishDto.earlyTerminationReason.trim();
+    }
+
+    // Save evaluation
+    application.practiceEvaluation = {
+      qualityAndOrganization: finishDto.evaluation.qualityAndOrganization,
+      knowledgeAndApplication: finishDto.evaluation.knowledgeAndApplication,
+      learningCapacity: finishDto.evaluation.learningCapacity,
+      attendanceAndPunctuality: finishDto.evaluation.attendanceAndPunctuality,
+      initiativeAndJudgment: finishDto.evaluation.initiativeAndJudgment,
+    };
 
     application.finalizedAt = new Date();
     await application.save();

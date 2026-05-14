@@ -82,3 +82,14 @@ export function useToggleUserStatus() {
   });
 }
 
+export function useGenerateTemporaryPassword() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => usersApi.generateTemporaryPassword(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+}
+

@@ -2,7 +2,16 @@ const ENCRYPTION_KEY =
   import.meta.env.VITE_STORAGE_ENCRYPTION_KEY ||
   'itca-pp-system-default-key-change-in-production-32';
 
+// Verificar si crypto.subtle está disponible (solo en contextos seguros: HTTPS o localhost)
+const isCryptoAvailable = (): boolean => {
+  return typeof crypto !== 'undefined' && typeof crypto.subtle !== 'undefined';
+};
+
 async function getKey(): Promise<CryptoKey> {
+  if (!isCryptoAvailable()) {
+    throw new Error('crypto.subtle no está disponible. Se requiere HTTPS o localhost.');
+  }
+
   let keyData: Uint8Array;
 
   if (ENCRYPTION_KEY.length === 64 && /^[0-9a-fA-F]+$/.test(ENCRYPTION_KEY)) {
@@ -81,18 +90,38 @@ async function decrypt(encryptedText: string): Promise<string> {
 
 export const encryptedStorage = {
   setItem: async (key: string, value: string): Promise<void> => {
-    const encrypted = await encrypt(value);
-    localStorage.setItem(key, encrypted);
+    // Si crypto.subtle no está disponible (HTTP sin HTTPS), usar localStorage sin cifrado
+    if (!isCryptoAvailable()) {
+      console.warn('crypto.subtle no disponible (HTTP sin HTTPS). Guardando sin cifrado.');
+      localStorage.setItem(key, value);
+      return;
+    }
+
+    try {
+      const encrypted = await encrypt(value);
+      localStorage.setItem(key, encrypted);
+    } catch (error) {
+      console.error(`Error al guardar ${key} en encryptedStorage:`, error);
+      // Si falla el cifrado, usar fallback sin cifrado
+      console.warn('Fallback: guardando sin cifrado debido a error en cifrado');
+      localStorage.setItem(key, value);
+    }
   },
 
   getItem: async (key: string): Promise<string | null> => {
-    const encrypted = localStorage.getItem(key);
-    if (!encrypted) return null;
+    const stored = localStorage.getItem(key);
+    if (!stored) return null;
+
+    // Si crypto.subtle no está disponible, asumir que está sin cifrar
+    if (!isCryptoAvailable()) {
+      return stored;
+    }
 
     try {
-      return await decrypt(encrypted);
+      return await decrypt(stored);
     } catch {
-      return null;
+      // Si falla el descifrado, puede ser que esté sin cifrar (migración)
+      return stored;
     }
   },
 

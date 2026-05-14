@@ -32,6 +32,7 @@ import type {
   UpdateCareerDto,
 } from '@/types/career.types';
 import type { DashboardStats } from '@/types/dashboard.types';
+import type { AdminReports } from '@/types/reports.types';
 import type {
   Opportunity,
   OpportunitiesResponse,
@@ -103,6 +104,16 @@ export const clearAuthToken = (): void => {
 export const authApi = {
   login: async (data: LoginRequest): Promise<LoginResponse> => {
     const response = await api.post<LoginResponse>('/auth/login', data);
+    
+    // Log temporal para debugging
+    console.log('Login response:', {
+      status: response.status,
+      statusText: response.statusText,
+      data: response.data,
+      hasAccessToken: !!response.data?.access_token,
+      hasUser: !!response.data?.user,
+    });
+    
     return response.data;
   },
   register: async (data: RegisterRequest): Promise<LoginResponse> => {
@@ -409,6 +420,10 @@ export const dashboardApi = {
     const response = await api.get<DashboardStats>('/dashboard');
     return response.data;
   },
+  getReports: async (): Promise<AdminReports> => {
+    const response = await api.get<AdminReports>('/dashboard/reports');
+    return response.data;
+  },
 };
 
 export const opportunitiesApi = {
@@ -469,6 +484,14 @@ export const opportunitiesApi = {
     const response = await api.patch<Application>(
       `/opportunities/applications/${applicationId}/status`,
       data,
+    );
+    return response.data;
+  },
+  acceptApplicationByCoordinator: async (
+    applicationId: string,
+  ): Promise<Application> => {
+    const response = await api.patch<Application>(
+      `/opportunities/applications/${applicationId}/accept`,
     );
     return response.data;
   },
@@ -562,6 +585,18 @@ export const opportunitiesApi = {
     );
     return response.data;
   },
+  getCoordinatorApplications: async (params?: {
+    page?: number;
+    limit?: number;
+    opportunityId?: string;
+    search?: string;
+  }): Promise<ApplicationsResponse> => {
+    const response = await api.get<ApplicationsResponse>(
+      '/opportunities/applications/coordinator',
+      { params },
+    );
+    return response.data;
+  },
   // Admin methods
   getAllForAdmin: async (params?: {
     page?: number;
@@ -643,30 +678,16 @@ export const studentsApi = {
   },
   uploadSocialServiceDocument: async (
     formData: FormData,
-  ): Promise<{
-    message: string;
-    validation: {
-      isValid: boolean;
-      errors: string[];
-      warnings: string[];
-      hasValidStamp: boolean;
-      hasValidFormat: boolean;
-    };
-  }> => {
-    const response = await api.post<{
-      message: string;
-      validation: {
-        isValid: boolean;
-        errors: string[];
-        warnings: string[];
-        hasValidStamp: boolean;
-        hasValidFormat: boolean;
-      };
-    }>('/students/my-profile/social-service-document', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
+  ): Promise<Student> => {
+    const response = await api.post<Student>(
+      '/students/my-profile/social-service-document',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
       },
-    });
+    );
     return response.data;
   },
   uploadPassedSubjectsDocument: async (
@@ -692,6 +713,26 @@ export const studentsApi = {
   deletePassedSubjectsDocument: async (): Promise<Student> => {
     const response = await api.delete<Student>(
       '/students/my-profile/passed-subjects-document',
+    );
+    return response.data;
+  },
+  uploadEnrollmentProofDocument: async (
+    formData: FormData,
+  ): Promise<Student> => {
+    const response = await api.post<Student>(
+      '/students/my-profile/enrollment-proof-document',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      },
+    );
+    return response.data;
+  },
+  deleteEnrollmentProofDocument: async (): Promise<Student> => {
+    const response = await api.delete<Student>(
+      '/students/my-profile/enrollment-proof-document',
     );
     return response.data;
   },
@@ -732,6 +773,7 @@ export const practiceProfessionalApi = {
     student: import('@/types/student.types').Student;
     application: import('@/types/opportunity.types').Application;
     opportunity: import('@/types/opportunity.types').Opportunity;
+    approvedHours: number;
   }> => {
     const response = await api.get(
       `/practice-professional/company/students/${studentId}`,
@@ -756,9 +798,20 @@ export const practiceProfessionalApi = {
   },
   finishPracticeProfessional: async (
     studentId: string,
+    data: {
+      earlyTerminationReason?: string;
+      evaluation: {
+        qualityAndOrganization: number;
+        knowledgeAndApplication: number;
+        learningCapacity: number;
+        attendanceAndPunctuality: number;
+        initiativeAndJudgment: number;
+      };
+    },
   ): Promise<{ message: string }> => {
     const response = await api.put<{ message: string }>(
       `/practice-professional/company/students/${studentId}/finish`,
+      data,
     );
     return response.data;
   },
@@ -800,6 +853,12 @@ export const practiceProfessionalApi = {
     >(`/practice-professional/history/${applicationId}`);
     return response.data;
   },
+  getHolidays: async (year?: number): Promise<string[]> => {
+    const response = await api.get<string[]>('/practice-professional/holidays', {
+      params: year ? { year } : undefined,
+    });
+    return response.data;
+  },
 };
 
 export const usersApi = {
@@ -834,6 +893,14 @@ export const usersApi = {
   },
   toggleStatus: async (id: string): Promise<UserType> => {
     const response = await api.patch<UserType>(`/users/${id}/toggle-status`);
+    return response.data;
+  },
+  generateTemporaryPassword: async (
+    id: string,
+  ): Promise<{ generatedPassword: string }> => {
+    const response = await api.post<{ generatedPassword: string }>(
+      `/users/${id}/generate-temporary-password`,
+    );
     return response.data;
   },
 };

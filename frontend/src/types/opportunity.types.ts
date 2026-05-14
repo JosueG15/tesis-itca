@@ -67,6 +67,7 @@ export interface Opportunity {
   shareLink?: string;
   isSaved?: boolean;
   hasApplied?: boolean;
+  matchScore?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -97,10 +98,11 @@ export interface OpportunitiesResponse {
   totalPages: number;
 }
 
-export type ApplicationStatus = 'pendiente' | 'aceptada' | 'rechazada';
+export type ApplicationStatus = 'pendiente' | 'aprobada' | 'aceptada' | 'rechazada';
 
 export const ApplicationStatusValues = {
   PENDING: 'pendiente' as const,
+  APPROVED: 'aprobada' as const,
   ACCEPTED: 'aceptada' as const,
   REJECTED: 'rechazada' as const,
 };
@@ -120,6 +122,7 @@ export interface Application {
   status: ApplicationStatus;
   rejectionReason?: string;
   matchScore?: number;
+  finalizedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

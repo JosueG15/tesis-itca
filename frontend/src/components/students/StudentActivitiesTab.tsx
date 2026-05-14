@@ -1,4 +1,4 @@
-import { Calendar, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { Calendar, Clock, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -128,6 +128,44 @@ export function StudentActivitiesTab({
                       <p className="text-sm text-[#C62828] dark:text-[#EF5350] wrap-break-word">
                         {activity.rejectionReason}
                       </p>
+                    </div>
+                  )}
+
+                  {activity.evaluation && (
+                    <div
+                      className={`mt-3 p-3 rounded-lg border ${
+                        activity.evaluation.type === 'warning'
+                          ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+                          : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {activity.evaluation.type === 'warning' ? (
+                          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
+                        )}
+                        <div className="flex-1">
+                          <Label
+                            className={`text-xs font-medium mb-1 block ${
+                              activity.evaluation.type === 'warning'
+                                ? 'text-amber-800 dark:text-amber-300'
+                                : 'text-green-800 dark:text-green-300'
+                            }`}
+                          >
+                            Evaluación de Relevancia
+                          </Label>
+                          <p
+                            className={`text-sm wrap-break-word ${
+                              activity.evaluation.type === 'warning'
+                                ? 'text-amber-700 dark:text-amber-400'
+                                : 'text-green-700 dark:text-green-400'
+                            }`}
+                          >
+                            {activity.evaluation.message}
+                          </p>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

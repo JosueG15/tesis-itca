@@ -4,6 +4,7 @@ import { PracticeProfessionalController } from './practice-professional.controll
 import { PracticeProfessionalCompanyController } from './practice-professional-company.controller';
 import { PracticeProfessionalAdminController } from './practice-professional-admin.controller';
 import { PracticeProfessionalService } from './practice-professional.service';
+import { HolidaysService } from './holidays.service';
 import {
   PracticeActivity,
   PracticeActivitySchema,
@@ -36,7 +37,7 @@ import { StudentsModule } from '@/modules/students/students.module';
     PracticeProfessionalCompanyController,
     PracticeProfessionalAdminController,
   ],
-  providers: [PracticeProfessionalService],
+  providers: [PracticeProfessionalService, HolidaysService],
   exports: [PracticeProfessionalService],
 })
 export class PracticeProfessionalModule {}

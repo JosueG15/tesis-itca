@@ -12,5 +12,11 @@ export class StudentDetailResponseDto {
 
   @ApiProperty({ description: 'Oportunidad asociada a la aplicación' })
   opportunity: Opportunity;
+
+  @ApiProperty({
+    description: 'Total de horas aprobadas',
+    example: 100,
+  })
+  approvedHours: number;
 }
 

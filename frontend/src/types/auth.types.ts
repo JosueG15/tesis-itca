@@ -2,6 +2,7 @@ export const UserRole = {
   ADMIN: 'admin',
   COMPANY: 'company',
   ESTUDIANTE: 'estudiante',
+  COORDINADOR: 'coordinador',
 } as const;
 
 export type UserRole = (typeof UserRole)[keyof typeof UserRole];
@@ -13,6 +14,7 @@ export interface User {
   role: UserRole;
   isTemporaryPassword?: boolean;
   isProfileIncomplete?: boolean;
+  careerId?: string;
 }
 
 export interface UpdateUserProfileDto {

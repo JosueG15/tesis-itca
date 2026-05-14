@@ -15,6 +15,10 @@ export interface PracticeActivity {
   equipmentOrTool: string;
   status: ActivityStatus;
   rejectionReason?: string;
+  evaluation?: {
+    type: 'warning' | 'approval';
+    message: string;
+  };
   createdAt: string;
   updatedAt: string;
 }

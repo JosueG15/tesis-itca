@@ -26,6 +26,7 @@ interface JobDetailPanelProps {
   getTimeAgo: (date: string) => string;
   hideAppliedMessage?: boolean;
   hasAcceptedApplication?: boolean;
+  isApplying?: boolean;
 }
 
 export function JobDetailPanel({
@@ -34,6 +35,7 @@ export function JobDetailPanel({
   getTimeAgo,
   hideAppliedMessage = false,
   hasAcceptedApplication = false,
+  isApplying = false,
 }: JobDetailPanelProps) {
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
@@ -197,10 +199,15 @@ export function JobDetailPanel({
             <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mt-3 sm:mt-4">
               <Button
                 onClick={onApply}
-                disabled={opportunity.hasApplied || hasAcceptedApplication}
+                disabled={opportunity.hasApplied || hasAcceptedApplication || isApplying}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold w-full sm:w-auto sm:flex-initial text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {opportunity.hasApplied ? (
+                {isApplying ? (
+                  <>
+                    <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 mr-2 animate-spin" />
+                    Enviando...
+                  </>
+                ) : opportunity.hasApplied ? (
                   <>
                     <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 mr-2" />
                     Ya aplicaste

@@ -20,6 +20,7 @@ import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { UserRole } from '@/modules/auth/schemas/user.schema';
 import { PracticeProfessionalService } from './practice-professional.service';
+import { HolidaysService } from './holidays.service';
 import { CreateActivityDto } from './dto/create-activity.dto';
 import { PracticeProfessionalResponseDto } from './dto/practice-professional-response.dto';
 import { ActivityResponseDto } from './dto/activity-response.dto';
@@ -34,6 +35,7 @@ import { PracticeHistoryResponseDto } from './dto/practice-history-response.dto'
 export class PracticeProfessionalController {
   constructor(
     private readonly practiceProfessionalService: PracticeProfessionalService,
+    private readonly holidaysService: HolidaysService,
   ) {}
 
   @Get()
@@ -160,5 +162,20 @@ export class PracticeProfessionalController {
       req.user.id,
     );
   }
-}
 
+  @Get('holidays')
+  @ApiQuery({ name: 'year', required: false, type: Number })
+  @ApiOperation({
+    summary: 'Obtener días festivos de El Salvador',
+    description:
+      'Retorna la lista de días festivos oficiales de El Salvador para el año especificado o el año actual',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Días festivos obtenidos exitosamente',
+  })
+  async getHolidays(@Query('year') year?: string): Promise<string[]> {
+    const yearNum = year ? parseInt(year, 10) : new Date().getFullYear();
+    return this.holidaysService.getHolidaysForYear(yearNum);
+  }
+}

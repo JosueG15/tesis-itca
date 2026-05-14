@@ -2,9 +2,10 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import {
   User,
@@ -53,18 +54,38 @@ export class UsersService {
       );
     }
 
+    if (createUserDto.role === UserRole.COORDINADOR && !createUserDto.careerId) {
+      throw new BadRequestException(
+        'La carrera es requerida para coordinadores',
+      );
+    }
+
     const generatedPassword = this.generateRandomPassword();
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(generatedPassword, saltRounds);
 
-    const user = new this.userModel({
+    const userData: {
+      name: string;
+      email: string;
+      password: string;
+      role: UserRole;
+      careerId?: Types.ObjectId;
+      isActive: boolean;
+      isTemporaryPassword: boolean;
+    } = {
       name: createUserDto.name,
       email: createUserDto.email,
       password: hashedPassword,
-      role: UserRole.ADMIN,
+      role: createUserDto.role,
       isActive: true,
       isTemporaryPassword: true,
-    });
+    };
+
+    if (createUserDto.careerId) {
+      userData.careerId = new Types.ObjectId(createUserDto.careerId);
+    }
+
+    const user = new this.userModel(userData);
 
     const saved = await user.save();
     const userObj = saved.toObject();
@@ -87,7 +108,7 @@ export class UsersService {
   ) {
     const skip = (page - 1) * limit;
     const query: {
-      role: UserRole;
+      role: { $in: UserRole[] };
       $or?: Array<{
         name?: { $regex: string; $options: string };
         email?: { $regex: string; $options: string };
@@ -95,7 +116,7 @@ export class UsersService {
       isActive?: boolean;
       createdAt?: { $gte?: Date; $lte?: Date };
     } = {
-      role: UserRole.ADMIN,
+      role: { $in: [UserRole.ADMIN, UserRole.COORDINADOR] },
     };
 
     if (search) {
@@ -131,6 +152,7 @@ export class UsersService {
       this.userModel
         .find(query)
         .select('-password')
+        .populate('careerId', 'name code')
         .skip(skip)
         .limit(limit)
         .sort(sortObj)
@@ -152,6 +174,7 @@ export class UsersService {
     const user = await this.userModel
       .findById(id)
       .select('-password')
+      .populate('careerId', 'name code')
       .lean()
       .exec();
 
@@ -159,7 +182,7 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    if (user.role !== UserRole.ADMIN) {
+    if (user.role !== UserRole.ADMIN && user.role !== UserRole.COORDINADOR) {
       throw new NotFoundException('Usuario no encontrado');
     }
 
@@ -173,7 +196,7 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    if (user.role !== UserRole.ADMIN) {
+    if (user.role !== UserRole.ADMIN && user.role !== UserRole.COORDINADOR) {
       throw new NotFoundException('Usuario no encontrado');
     }
 
@@ -190,9 +213,19 @@ export class UsersService {
       }
     }
 
+    const roleToUse = updateUserDto.role ?? user.role;
+
+    if (roleToUse === UserRole.COORDINADOR && !updateUserDto.careerId && !user.careerId) {
+      throw new BadRequestException(
+        'La carrera es requerida para coordinadores',
+      );
+    }
+
     const updateData: {
       name?: string;
       email?: string;
+      role?: UserRole;
+      careerId?: Types.ObjectId | null;
       isActive?: boolean;
     } = {};
 
@@ -202,6 +235,18 @@ export class UsersService {
 
     if (updateUserDto.email !== undefined) {
       updateData.email = updateUserDto.email;
+    }
+
+    if (updateUserDto.role !== undefined) {
+      updateData.role = updateUserDto.role;
+    }
+
+    if (updateUserDto.careerId !== undefined) {
+      if (updateUserDto.careerId) {
+        updateData.careerId = new Types.ObjectId(updateUserDto.careerId);
+      } else {
+        updateData.careerId = null;
+      }
     }
 
     if (updateUserDto.isActive !== undefined) {
@@ -214,6 +259,7 @@ export class UsersService {
         runValidators: true,
       })
       .select('-password')
+      .populate('careerId', 'name code')
       .lean()
       .exec();
 
@@ -227,7 +273,7 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    if (user.role !== UserRole.ADMIN) {
+    if (user.role !== UserRole.ADMIN && user.role !== UserRole.COORDINADOR) {
       throw new NotFoundException('Usuario no encontrado');
     }
 
@@ -242,7 +288,7 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    if (user.role !== UserRole.ADMIN) {
+    if (user.role !== UserRole.ADMIN && user.role !== UserRole.COORDINADOR) {
       throw new NotFoundException('Usuario no encontrado');
     }
 
@@ -253,5 +299,30 @@ export class UsersService {
     const { password, ...userWithoutPassword } = userObj;
 
     return userWithoutPassword;
+  }
+
+  async generateTemporaryPassword(id: string) {
+    const user = await this.userModel.findById(id).exec();
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (user.role !== UserRole.ADMIN && user.role !== UserRole.COORDINADOR) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const generatedPassword = this.generateRandomPassword();
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(generatedPassword, saltRounds);
+
+    await this.userModel.findByIdAndUpdate(id, {
+      password: hashedPassword,
+      isTemporaryPassword: true,
+    });
+
+    return {
+      generatedPassword,
+    };
   }
 }

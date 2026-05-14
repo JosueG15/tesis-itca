@@ -43,6 +43,14 @@ export function StudentDetailPage() {
   const [rejectionReason, setRejectionReason] = useState('');
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showFinishDialog, setShowFinishDialog] = useState(false);
+  const [earlyTerminationReason, setEarlyTerminationReason] = useState('');
+  const [evaluation, setEvaluation] = useState({
+    qualityAndOrganization: 0,
+    knowledgeAndApplication: 0,
+    learningCapacity: 0,
+    attendanceAndPunctuality: 0,
+    initiativeAndJudgment: 0,
+  });
   const [activitiesPage, setActivitiesPage] = useState(1);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [activeTab, setActiveTab] = useState<'info' | 'activities'>('info');
@@ -65,6 +73,11 @@ export function StudentDetailPage() {
   const totalActivitiesPages = activitiesData?.totalPages || 0;
 
   const isFinalized = application?.finalizedAt ? true : false;
+
+  // Get approved hours from studentDetail (calculated in backend)
+  const approvedHours = studentDetail?.approvedHours || 0;
+  const requiredHours = opportunity?.totalHours || 0;
+  const needsEarlyTerminationReason = approvedHours < requiredHours;
 
   const handleApprove = useCallback((activityId: string) => {
     setSelectedActivity(activityId);
@@ -102,19 +115,77 @@ export function StudentDetailPage() {
   }, [selectedActivity, actionType, rejectionReason, updateStatusMutation]);
 
   const handleFinishPractice = useCallback(() => {
+    setEarlyTerminationReason('');
+    setEvaluation({
+      qualityAndOrganization: 0,
+      knowledgeAndApplication: 0,
+      learningCapacity: 0,
+      attendanceAndPunctuality: 0,
+      initiativeAndJudgment: 0,
+    });
     setShowFinishDialog(true);
   }, []);
 
   const confirmFinishPractice = useCallback(async () => {
     if (!id) return;
 
+    // Validate evaluation
+    if (
+      evaluation.qualityAndOrganization === 0 ||
+      evaluation.knowledgeAndApplication === 0 ||
+      evaluation.learningCapacity === 0 ||
+      evaluation.attendanceAndPunctuality === 0 ||
+      evaluation.initiativeAndJudgment === 0
+    ) {
+      toast.error(
+        'Evaluación incompleta',
+        'Debes calificar todas las preguntas de la evaluación (1-5).',
+      );
+      return;
+    }
+
+    if (needsEarlyTerminationReason && !earlyTerminationReason.trim()) {
+      toast.error(
+        'Motivo requerido',
+        'Debes proporcionar un motivo para finalizar la práctica profesional antes de completar las horas requeridas.',
+      );
+      return;
+    }
+
     try {
-      await finishPracticeMutation.mutateAsync(id);
+      await finishPracticeMutation.mutateAsync({
+        studentId: id,
+        earlyTerminationReason: needsEarlyTerminationReason
+          ? earlyTerminationReason.trim()
+          : undefined,
+        evaluation: {
+          qualityAndOrganization: evaluation.qualityAndOrganization,
+          knowledgeAndApplication: evaluation.knowledgeAndApplication,
+          learningCapacity: evaluation.learningCapacity,
+          attendanceAndPunctuality: evaluation.attendanceAndPunctuality,
+          initiativeAndJudgment: evaluation.initiativeAndJudgment,
+        },
+      });
       setShowFinishDialog(false);
+      setEarlyTerminationReason('');
+      setEvaluation({
+        qualityAndOrganization: 0,
+        knowledgeAndApplication: 0,
+        learningCapacity: 0,
+        attendanceAndPunctuality: 0,
+        initiativeAndJudgment: 0,
+      });
     } catch {
       // Error is handled by the mutation
     }
-  }, [id, finishPracticeMutation]);
+  }, [
+    id,
+    finishPracticeMutation,
+    needsEarlyTerminationReason,
+    earlyTerminationReason,
+    evaluation,
+    toast,
+  ]);
 
   const handleDownloadPDF = useCallback(async () => {
     if (!student) {
@@ -396,29 +467,261 @@ export function StudentDetailPage() {
 
       {/* Finish Practice Dialog */}
       <Dialog open={showFinishDialog} onOpenChange={setShowFinishDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Flag className="h-5 w-5 text-amber-600" />
               Finalizar Práctica Profesional
             </DialogTitle>
             <DialogDescription className="pt-2">
-              ¿Estás seguro de que deseas finalizar la práctica profesional de{' '}
-              {student?.firstName} {student?.lastName}? Esta acción marcará la
-              práctica como completada.
+              {needsEarlyTerminationReason ? (
+                <>
+                  <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-1">
+                      Finalización Anticipada
+                    </p>
+                    <p className="text-sm text-amber-700 dark:text-amber-400">
+                      Las horas aprobadas ({approvedHours}) son menores a las horas
+                      requeridas ({requiredHours}). Debes proporcionar un motivo para
+                      finalizar la práctica profesional antes de tiempo.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  Para finalizar la práctica profesional de {student?.firstName}{' '}
+                  {student?.lastName}, debes completar la evaluación del trabajo
+                  realizado. Todas las preguntas son obligatorias.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Evaluation Form */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Evaluación del Trabajo Realizado
+              </h3>
+
+              {/* Quality and Organization */}
+              <div className="space-y-2">
+                <Label htmlFor="qualityAndOrganization" className="text-sm font-medium">
+                  Calidad y Organización del Trabajo{' '}
+                  <span className="text-red-500">*</span>
+                </Label>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Mida la eficiencia y precisión en el desarrollo de sus labores. El
+                  Alumno realiza su trabajo con precisión, planificación y siempre lo
+                  revisa.
+                </p>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() =>
+                        setEvaluation((prev) => ({
+                          ...prev,
+                          qualityAndOrganization: num,
+                        }))
+                      }
+                      className={`flex-1 h-12 rounded-lg border-2 font-semibold text-sm transition-all ${
+                        evaluation.qualityAndOrganization === num
+                          ? 'bg-amber-600 border-amber-600 text-white scale-105 shadow-md'
+                          : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Knowledge and Application */}
+              <div className="space-y-2">
+                <Label htmlFor="knowledgeAndApplication" className="text-sm font-medium">
+                  Conocimiento y Aplicación <span className="text-red-500">*</span>
+                </Label>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Mida los conocimientos adquiridos y su consecuente aplicación al
+                  trabajo que desarrolla. El alumno domina ampliamente y aplica en forma
+                  correcta los conocimientos exigibles a su especialidad y nivel.
+                </p>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() =>
+                        setEvaluation((prev) => ({
+                          ...prev,
+                          knowledgeAndApplication: num,
+                        }))
+                      }
+                      className={`flex-1 h-12 rounded-lg border-2 font-semibold text-sm transition-all ${
+                        evaluation.knowledgeAndApplication === num
+                          ? 'bg-amber-600 border-amber-600 text-white scale-105 shadow-md'
+                          : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Learning Capacity */}
+              <div className="space-y-2">
+                <Label htmlFor="learningCapacity" className="text-sm font-medium">
+                  Capacidad de Aprendizaje <span className="text-red-500">*</span>
+                </Label>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Califique la rapidez y efectividad con que retiene conocimientos. El
+                  alumno aprende con gran facilidad y rapidez.
+                </p>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() =>
+                        setEvaluation((prev) => ({
+                          ...prev,
+                          learningCapacity: num,
+                        }))
+                      }
+                      className={`flex-1 h-12 rounded-lg border-2 font-semibold text-sm transition-all ${
+                        evaluation.learningCapacity === num
+                          ? 'bg-amber-600 border-amber-600 text-white scale-105 shadow-md'
+                          : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Attendance and Punctuality */}
+              <div className="space-y-2">
+                <Label
+                  htmlFor="attendanceAndPunctuality"
+                  className="text-sm font-medium"
+                >
+                  Asistencia y Puntualidad <span className="text-red-500">*</span>
+                </Label>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  El Alumno asiste todos los días a su práctica puntualmente.
+                </p>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() =>
+                        setEvaluation((prev) => ({
+                          ...prev,
+                          attendanceAndPunctuality: num,
+                        }))
+                      }
+                      className={`flex-1 h-12 rounded-lg border-2 font-semibold text-sm transition-all ${
+                        evaluation.attendanceAndPunctuality === num
+                          ? 'bg-amber-600 border-amber-600 text-white scale-105 shadow-md'
+                          : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Initiative and Judgment */}
+              <div className="space-y-2">
+                <Label htmlFor="initiativeAndJudgment" className="text-sm font-medium">
+                  Iniciativa y Criterio <span className="text-red-500">*</span>
+                </Label>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Mida la capacidad para actuar acertadamente en forma autónoma sin
+                  instrucciones concretas. El alumno decide y actúa correctamente,
+                  investiga para realizar un trabajo óptimo.
+                </p>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() =>
+                        setEvaluation((prev) => ({
+                          ...prev,
+                          initiativeAndJudgment: num,
+                        }))
+                      }
+                      className={`flex-1 h-12 rounded-lg border-2 font-semibold text-sm transition-all ${
+                        evaluation.initiativeAndJudgment === num
+                          ? 'bg-amber-600 border-amber-600 text-white scale-105 shadow-md'
+                          : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Early Termination Reason */}
+            {needsEarlyTerminationReason && (
+              <div className="space-y-2 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <Label htmlFor="earlyTerminationReason" className="text-sm font-medium">
+                  Motivo de Finalización Anticipada{' '}
+                  <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="earlyTerminationReason"
+                  value={earlyTerminationReason}
+                  onChange={(e) => setEarlyTerminationReason(e.target.value)}
+                  placeholder="Describe el motivo por el cual se está finalizando la práctica profesional antes de completar las horas requeridas..."
+                  rows={4}
+                  className="resize-none"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Mínimo 10 caracteres
+                </p>
+              </div>
+            )}
+          </div>
+
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setShowFinishDialog(false)}
+              onClick={() => {
+                setShowFinishDialog(false);
+                setEarlyTerminationReason('');
+                setEvaluation({
+                  qualityAndOrganization: 0,
+                  knowledgeAndApplication: 0,
+                  learningCapacity: 0,
+                  attendanceAndPunctuality: 0,
+                  initiativeAndJudgment: 0,
+                });
+              }}
               disabled={finishPracticeMutation.isPending}
             >
               Cancelar
             </Button>
             <Button
               onClick={confirmFinishPractice}
-              disabled={finishPracticeMutation.isPending}
+              disabled={
+                finishPracticeMutation.isPending ||
+                evaluation.qualityAndOrganization === 0 ||
+                evaluation.knowledgeAndApplication === 0 ||
+                evaluation.learningCapacity === 0 ||
+                evaluation.attendanceAndPunctuality === 0 ||
+                evaluation.initiativeAndJudgment === 0 ||
+                (needsEarlyTerminationReason && !earlyTerminationReason.trim())
+              }
               className="bg-amber-600 hover:bg-amber-700 text-white"
             >
               {finishPracticeMutation.isPending ? (
